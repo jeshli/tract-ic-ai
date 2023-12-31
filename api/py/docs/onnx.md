@@ -1,3 +1,0 @@
-# ONNX
-
-::: tract.onnx

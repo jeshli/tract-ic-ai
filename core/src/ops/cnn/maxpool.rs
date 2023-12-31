@@ -9,6 +9,8 @@ pub struct MaxPool {
     pub with_index_outputs: Option<DatumType>,
 }
 
+
+
 impl Op for MaxPool {
     fn name(&self) -> Cow<str> {
         "MaxPool".into()

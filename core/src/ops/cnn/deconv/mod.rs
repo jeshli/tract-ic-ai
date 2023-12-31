@@ -1,11 +1,10 @@
 use crate::internal::*;
 use crate::ops::cnn::{PaddingSpec, PoolSpec};
 
-#[allow(clippy::module_inception)]
-mod deconv;
 mod deconv_sum;
+mod unary;
 
-pub use deconv::Deconv;
+pub use unary::DeconvUnary;
 
 pub fn output_shape<D: DimLike>(
     pool_spec: &PoolSpec,
@@ -23,9 +22,10 @@ pub fn output_shape<D: DimLike>(
     )?;
     let deconv_shape: TVec<D> =
         spatial_output_details.iter().map(|comp| comp.deconvoluted.clone()).collect();
+    let co = pool_spec.output_channel_override.unwrap();
     let output_shape = pool_spec.data_format.from_n_c_hw(
         x_shape.n().cloned().unwrap_or_else(|| 1.into()),
-        pool_spec.output_channels.into(),
+        co.into(),
         deconv_shape,
     )?;
     Ok(output_shape.shape)

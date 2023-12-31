@@ -1,6 +1,0 @@
-tensorflow
-numpy
-tf2onnx
-onnxmltools
-onnxconverter_common
-tract

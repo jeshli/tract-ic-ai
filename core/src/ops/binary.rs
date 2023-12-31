@@ -24,7 +24,7 @@ pub fn wire_cast(
 }
 
 pub fn wire_rank_broadcast(
-    prefix: impl AsRef<str>,
+    prefix: &str,
     target: &mut TypedModel,
     inputs: &[OutletId],
 ) -> TractResult<TVec<OutletId>> {
@@ -34,7 +34,6 @@ pub fn wire_rank_broadcast(
         .collect::<TractResult<TVec<_>>>()?;
     let max_rank = facts.iter().map(|f| f.rank()).max().unwrap();
     let mut wires = tvec!();
-    let prefix = prefix.as_ref();
     for i in 0..inputs.len() {
         let mut wire = inputs[i];
         for j in facts[i].rank()..max_rank {
@@ -47,12 +46,11 @@ pub fn wire_rank_broadcast(
 }
 
 pub fn wire_with_rank_broadcast(
-    prefix: impl AsRef<str>,
+    prefix: &str,
     target: &mut TypedModel,
     op: impl Into<Box<dyn TypedOp>>,
     inputs: &[OutletId],
 ) -> TractResult<TVec<OutletId>> {
-    let prefix = prefix.as_ref();
     let wires = wire_rank_broadcast(prefix, target, inputs)?;
     target.wire_node(prefix, &op.into(), &wires)
 }
@@ -146,7 +144,7 @@ impl EvalOp for TypedBinOp {
 
     fn eval(&self, inputs: TVec<TValue>) -> TractResult<TVec<TValue>> {
         let (a, b) = args_2!(inputs);
-        ensure!(a.rank() == b.rank());
+        debug_assert_eq!(a.rank(), b.rank());
         Ok(tvec!(self.0.eval(a, b)?.into_tvalue()))
     }
 }

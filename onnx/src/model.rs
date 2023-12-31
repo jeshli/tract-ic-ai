@@ -1,6 +1,7 @@
 use std::convert::TryInto;
-use std::path::PathBuf;
-use std::{fs, path};
+//use std::path::PathBuf;
+//use std::{fs, path};
+//use std::{path};
 
 use std::collections::HashMap;
 
@@ -11,6 +12,8 @@ use crate::pb::type_proto::Value;
 use crate::pb::{self, TypeProto};
 use crate::tensor::translate_inference_fact;
 use prost::Message;
+use bytes::Bytes;
+
 
 pub fn optional_inputs(pb: &pb::NodeProto) -> impl Iterator<Item = Option<usize>> + '_ {
     let mut real_input = 0;
@@ -25,16 +28,17 @@ pub fn optional_inputs(pb: &pb::NodeProto) -> impl Iterator<Item = Option<usize>
 }
 
 pub fn optional_outputs(pb: &pb::NodeProto) -> impl Iterator<Item = Option<usize>> + '_ {
-    let mut real_output = 0;
+    let mut real_input = 0;
     (0..).map(move |i| {
         if pb.output.get(i).filter(|s| !s.is_empty()).is_some() {
-            real_output += 1;
-            Some(real_output - 1)
+            real_input += 1;
+            Some(real_input - 1)
         } else {
             None
         }
     })
 }
+
 
 #[derive(Clone)]
 pub struct TensorPlusPath<'a> {
@@ -67,7 +71,7 @@ impl<'a> ParsingContext<'a> {
             InferenceModel { symbol_table: ctx.symbol_table.clone(), ..InferenceModel::default() };
         let mut unresolved_inputs = vec![];
         let mut closures_to_wire = vec![];
-        trace!("trying to initialize initializers hashmap...");
+        //trace!("trying to initialize initializers hashmap...");
         #[allow(unused_assignments)]
         let mut initializers: HashMap<&str, Tensor> = HashMap::default();
         if let Some(path) = self.model_path {
@@ -79,20 +83,23 @@ impl<'a> ParsingContext<'a> {
                     Ok((&*tensor.name, tensor_struct.try_into()?))
                 })
                 .collect::<TractResult<_>>()?;
-        } else {
+        }
+
+        else {
             initializers = graph
                 .initializer
                 .iter()
                 .map(|init| Ok((&*init.name, init.try_into()?)))
                 .collect::<TractResult<_>>()?;
         }
-        for (k, v) in initializers.iter().sorted_by_key(|kv| kv.0) {
-            trace!("Initializer: {} {:?}", k, v);
-        }
+
+        //for (k, v) in initializers.iter().sorted_by_key(|kv| kv.0) {
+            //trace!("Initializer: {} {:?}", k, v);
+        //}
         let mut outlets_by_name = HashMap::<String, OutletId>::new();
         for input in graph.input.iter() {
             if let Some(init) = initializers.remove(&*input.name) {
-                trace!("Input: {} initialized by {:?}", input.name, init);
+                //trace!("Input: {} initialized by {:?}", input.name, init);
                 let id = model.add_const(input.name.to_owned(), init)?;
                 outlets_by_name.insert(input.name.to_owned(), id);
             } else {
@@ -103,14 +110,14 @@ impl<'a> ParsingContext<'a> {
                 } else {
                     bail!("Can not parse tensor type");
                 };
-                trace!("Input: {} is a source ({:?})", input.name, fact);
+                //trace!("Input: {} is a source ({:?})", input.name, fact);
                 let id = model.add_source(&*input.name, fact)?;
                 outlets_by_name.insert(input.name.to_owned(), id);
             }
         }
-        for output in graph.output.iter() {
-            trace!("Model output: {:?}", output);
-        }
+        //for output in graph.output.iter() {
+            //trace!("Model output: {:?}", output);
+        //}
         for (name, t) in initializers.into_iter().sorted_by_key(|kv| kv.0) {
             let id = model.add_const(name, t)?;
             outlets_by_name.insert(name.to_string(), id);
@@ -124,14 +131,14 @@ impl<'a> ParsingContext<'a> {
             } else {
                 format!("{}-{}", model.nodes().len(), pbnode.op_type)
             };
-            trace!("Creating node {}", name);
+            //trace!("Creating node {}", name);
             let facts = pbnode
                 .output
                 .iter()
                 .filter(|s| !s.is_empty())
                 .map(|_| InferenceFact::default())
                 .collect();
-            trace!("  outputs {:?}", pbnode.output);
+            //trace!("  outputs {:?}", pbnode.output);
             let (op, closures) = match self.framework.op_register.0.get(&pbnode.op_type) {
                 Some(builder) => (builder)(&ctx, pbnode).with_context(|| {
                     format!("Building node {} ({})", pbnode.name, pbnode.op_type)
@@ -152,7 +159,7 @@ impl<'a> ParsingContext<'a> {
                 model.set_outlet_label(OutletId::new(id, ix), output.to_owned())?;
             }
             for closure in closures {
-                trace!("Node {} closes on {}", model.nodes()[id], closure);
+                //trace!("Node {} closes on {}", model.nodes()[id], closure);
                 closures_to_wire.push((id, closure))
             }
         }
@@ -227,6 +234,7 @@ pub struct Onnx {
 }
 
 impl Onnx {
+    /*
     pub fn parse(&self, proto: &pb::ModelProto, path: Option<&str>) -> TractResult<ParseResult> {
         self.parse_with_symbols(proto, path, &SymbolTable::default())
     }
@@ -261,6 +269,7 @@ impl Onnx {
         trace!("created ParsingContext");
         ctx.parse_graph(graph)
     }
+    */
 
     pub fn with_ignore_output_shapes(self, ignore: bool) -> Onnx {
         Self { use_output_shapes: !ignore, ..self }
@@ -270,6 +279,7 @@ impl Onnx {
         Self { ignore_output_types: ignore, ..self }
     }
 
+    /*
     pub fn determinize(model: &mut InferenceModel) -> TractResult<()> {
         use crate::ops::multinomial::Multinomial;
         for node in model.nodes_mut() {
@@ -281,9 +291,48 @@ impl Onnx {
         }
         Ok(())
     }
+    */
+
+    pub fn parse_bytes(&self, proto: &pb::ModelProto) -> TractResult<ParseResult> {
+        self.parse_bytes_with_symbols(proto, &SymbolTable::default())
+    }
+    pub fn parse_bytes_with_symbols(
+        &self,
+        proto: &pb::ModelProto,
+        symbol_table: &SymbolTable,
+    ) -> TractResult<ParseResult> {
+        let onnx_operator_set_version = proto
+            .opset_import
+            .iter()
+            .find(|import| import.domain.is_empty() || import.domain == "ai.onnx")
+            .map(|op| op.version)
+            .unwrap_or(0);
+        let graph =
+            proto.graph.as_ref().ok_or_else(|| anyhow!("model proto does not contain a graph"))?;
+        //debug!("ONNX operator set version: {:?}", onnx_operator_set_version);
+        if onnx_operator_set_version != 0 && !(9..19).contains(&onnx_operator_set_version) {
+            //warn!("ONNX operator for your model is {}, tract is only tested against \
+            //      operator set 9 to 18 (included). Your model may still work so this is not a hard fail.",
+            //      onnx_operator_set_version);
+        }
+        let ctx = ParsingContext {
+            framework: self,
+            model: proto,
+            parent_graphs: vec![],
+            onnx_operator_set_version,
+            model_path: None,
+            symbol_table: symbol_table.clone(),
+        };
+        //trace!("created ParsingContext");
+        ctx.parse_graph(graph)
+    }
+
+
 }
 
+/*
 impl Framework<pb::ModelProto, InferenceModel> for Onnx {
+
     fn model_for_path(&self, p: impl AsRef<path::Path>) -> TractResult<InferenceModel> {
         let mut path = PathBuf::new();
         path.push(&p);
@@ -299,19 +348,15 @@ impl Framework<pb::ModelProto, InferenceModel> for Onnx {
         Ok(model)
     }
 
-    #[cfg(target_family = "wasm")]
+
+    //#[cfg(target_family = "wasm")]
     fn proto_model_for_path(&self, p: impl AsRef<path::Path>) -> TractResult<pb::ModelProto> {
         let p = p.as_ref();
         let mut file = fs::File::open(p).with_context(|| format!("Opening {p:?}"))?;
         Ok(self.proto_model_for_read(&mut file)?)
     }
 
-    #[cfg(all(any(windows, unix), not(target_os = "emscripten")))]
-    fn proto_model_for_path(&self, p: impl AsRef<path::Path>) -> TractResult<pb::ModelProto> {
-        let p = p.as_ref();
-        let map = unsafe { memmap2::Mmap::map(&fs::File::open(p).with_context(|| format!("Opening {p:?}"))?)? };
-        Ok(crate::pb::ModelProto::decode(&*map)?)
-    }
+
 
     fn proto_model_for_read(&self, r: &mut dyn std::io::Read) -> TractResult<pb::ModelProto> {
         let mut v = vec![];
@@ -319,6 +364,7 @@ impl Framework<pb::ModelProto, InferenceModel> for Onnx {
         let b = bytes::Bytes::from(v);
         Ok(crate::pb::ModelProto::decode(b)?)
     }
+
 
     fn model_for_proto_model_with_symbols(
         &self,
@@ -337,4 +383,31 @@ impl Framework<pb::ModelProto, InferenceModel> for Onnx {
         let proto_model = self.proto_model_for_read(r).context("Reading proto model")?;
         self.model_for_proto_model(&proto_model).context("Translating proto model to model")
     }
+
+
 }
+    */
+
+pub trait FrameworkExtension {
+    fn model_for_bytes(&self, b: Bytes) -> TractResult<InferenceModel>;
+    fn proto_model_for_bytes(&self, b: Bytes) -> TractResult<pb::ModelProto>;
+}
+
+impl FrameworkExtension for Onnx  {
+
+    fn model_for_bytes(&self, b: Bytes) -> TractResult<InferenceModel> {
+
+        let proto = self.proto_model_for_bytes(b)?;
+        let ParseResult { model, unresolved_inputs, .. } = self.parse_bytes(&proto)?;
+        if unresolved_inputs.len() > 0 {
+            bail!("Could not resolve inputs at top-level: {:?}", unresolved_inputs)
+        }
+        Ok(model)
+    }
+
+    fn proto_model_for_bytes(&self, b: Bytes) -> TractResult<pb::ModelProto> {
+        Ok(crate::pb::ModelProto::decode(b)?)
+    }
+
+}
+

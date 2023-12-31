@@ -5,10 +5,10 @@ use tract_nnef::internal::*;
 pub mod is_inf;
 pub mod is_nan;
 pub mod lrn;
-pub mod ml;
-pub mod multinomial;
+//pub mod ml;
+//pub mod multinomial;
 pub mod non_max_suppression;
-pub mod random;
+//pub mod random;
 
 pub trait WithOnnx {
     fn with_onnx(self) -> Self;
@@ -28,10 +28,10 @@ impl WithOnnx for tract_nnef::framework::Nnef {
 
 fn onnx_opl_registry() -> Registry {
     let mut registry: Registry = Registry::new("tract_onnx");
-    ml::register(&mut registry);
+    //ml::register(&mut registry);
     non_max_suppression::register(&mut registry);
-    multinomial::register(&mut registry);
-    random::register(&mut registry);
+    //multinomial::register(&mut registry);
+    //random::register(&mut registry);
     registry.register_element_wise(
         "tract_onnx_isinf",
         TypeId::of::<is_inf::IsInf>(),

@@ -10,12 +10,12 @@ mod einsum;
 mod fft;
 pub mod logic;
 mod math;
-mod ml;
-pub mod multinomial;
+//mod ml;
+//pub mod multinomial;
 mod nn;
 mod non_max_suppression;
 mod quant;
-mod random;
+//mod random;
 pub mod rec;
 mod resize;
 mod s2d;
@@ -28,7 +28,7 @@ pub fn register_all_ops(reg: &mut OnnxOpRegister) {
     });
     reg.insert("Resize", resize::resize);
     reg.insert("NonMaxSuppression", non_max_suppression::non_max_suppression);
-    reg.insert("Multinomial", multinomial::multinomial);
+    //reg.insert("Multinomial", multinomial::multinomial);
     array::register_all_ops(reg);
     cast::register_all_ops(reg);
     cumsum::register_all_ops(reg);
@@ -36,10 +36,10 @@ pub fn register_all_ops(reg: &mut OnnxOpRegister) {
     fft::register_all_ops(reg);
     logic::register_all_ops(reg);
     math::register_all_ops(reg);
-    ml::register_all_ops(reg);
+    //ml::register_all_ops(reg);
     nn::register_all_ops(reg);
     quant::register_all_ops(reg);
-    random::register_all_ops(reg);
+    //random::register_all_ops(reg);
     rec::register_all_ops(reg);
     s2d::register_all_ops(reg);
 }

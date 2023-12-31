@@ -44,17 +44,17 @@ impl Expansion for Softmax {
 
         let input = target.outlet_fact(inputs[0])?.clone();
         let input_dt = input.datum_type;
-        let quant_output_dt = if input_dt.is_quantized() {
+        let output_dt = if input_dt.is_quantized() {
             // Quantization parameters are not specified in ONNX (v13) so we set this value as default
             // in order to maximize the precision of the output.
-            Some(DatumType::QU8(QParams::ZpScale { zero_point: 0, scale: 0.0078125 }))
+            DatumType::QU8(QParams::ZpScale { zero_point: 0, scale: 0.0078125 })
         } else {
-            None
+            input_dt
         };
 
         target.wire_node(
             name,
-            tract_core::ops::nn::Softmax { axes: tvec![axis], quant_output_dt },
+            tract_core::ops::nn::Softmax { axes: tvec![axis], output_dt },
             inputs,
         )
     }

@@ -1,14 +1,14 @@
-use tar::Builder;
+//use tar::Builder;
 use tract_core::tract_data::itertools::Itertools;
 
 use crate::ast::quant::write_quant_format;
 use crate::ast::{Document, Identifier, ProtoModel, QuantFormat};
 use crate::{internal::*, nnef};
 use std::io::Read;
-#[cfg(target_family = "unix")]
-use std::os::unix::prelude::OsStrExt;
+//#[cfg(target_family = "unix")]
+//use std::os::unix::prelude::OsStrExt;
 use std::path::Path;
-use std::str::FromStr;
+//use std::str::FromStr;
 
 pub fn stdlib() -> Vec<FragmentDef> {
     crate::ast::parse::parse_fragments(include_str!("../stdlib.nnef")).unwrap()
@@ -78,10 +78,12 @@ impl Nnef {
         ModelBuilder::new(self, proto_model, symbols).into_typed_model()
     }
 
+    /*
     pub fn write(&self, model: &TypedModel, w: impl std::io::Write) -> TractResult<()> {
         self.write_to_tar(model, w)?;
         Ok(())
     }
+
 
     pub fn write_to_tar<W: std::io::Write>(&self, model: &TypedModel, w: W) -> TractResult<W> {
         let mut ar = tar::Builder::new(w);
@@ -94,6 +96,7 @@ impl Nnef {
         self._write_to_tar(model, &mut ar, compress_nested_models)?;
         ar.into_inner().context("Finalizing tar")
     }
+
 
     fn _write_to_tar<W: std::io::Write>(
         &self,
@@ -179,10 +182,11 @@ impl Nnef {
                 ar.append_data(&mut header, filename, &mut &*submodel_data)
                     .with_context(|| format!("Appending submodel {label:?}"))?;
             }
+
         }
         Ok(())
     }
-
+     */
     pub fn write_to_dir(
         &self,
         model: &TypedModel,
@@ -221,6 +225,7 @@ impl tract_core::prelude::Framework<ProtoModel, TypedModel> for Nnef {
         self.model_for_proto_model(&proto)
     }
 
+    /*
     fn proto_model_for_path(&self, path: impl AsRef<Path>) -> TractResult<ProtoModel> {
         let path = path.as_ref();
         if path.is_file() {
@@ -249,6 +254,7 @@ impl tract_core::prelude::Framework<ProtoModel, TypedModel> for Nnef {
         }
         proto_model_from_resources(resources)
     }
+    */
 
     fn proto_model_for_read(&self, reader: &mut dyn std::io::Read) -> TractResult<ProtoModel> {
         let mut resources: HashMap<String, Arc<dyn Resource>> = Default::default();
@@ -379,10 +385,10 @@ fn read_stream<R: std::io::Read>(
     framework: &Nnef,
 ) -> TractResult<()> {
     // ignore path with any component starting with "." (because OSX's tar is weird)
-    #[cfg(target_family = "unix")]
-    if path.components().any(|name| name.as_os_str().as_bytes().first() == Some(&b'.')) {
-        return Ok(());
-    }
+    //#[cfg(target_family = "unix")]
+    //if path.components().any(|name| name.as_os_str().as_bytes().first() == Some(&b'.')) {
+    //    return Ok(());
+    //}
     let mut last_loader_name;
     for loader in framework.resource_loaders.iter() {
         last_loader_name = Some(loader.name());

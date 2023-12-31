@@ -1,3 +1,0 @@
-# Runnable model
-
-::: tract.runnable

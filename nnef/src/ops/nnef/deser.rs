@@ -1,7 +1,5 @@
 use crate::ast::*;
 use crate::deser::Value;
-use ops::cnn::deconv::Deconv;
-use ops::cnn::{Conv, KernelFormat};
 use tract_core::internal::*;
 use tract_core::ops::array::PadMode;
 use tract_core::ops::cnn::deconv::adjustments;
@@ -302,8 +300,7 @@ pub fn read_conv_parameters(
         padding,
         if dilation.len() > 0 { Some(dilation) } else { None },
         if stride.len() > 0 { Some(stride) } else { None },
-        kernel_shape[1] * group,
-        kernel_shape[0],
+        Some(kernel_shape[0]),
     );
 
     let border: String = invocation.named_arg_as(builder, "border")?;
@@ -317,42 +314,52 @@ pub fn conv_or_deconv(
     invocation: &ResolvedInvocation,
     deconv: bool,
 ) -> TractResult<Value> {
+    use ops::cnn::deconv::DeconvUnary;
+    use ops::cnn::{ConvUnary, KernelFormat};
+
     let input: OutletId = invocation.named_arg_as(builder, "input")?;
-    let kernel: OutletId = invocation.named_arg_as(builder, "filter")?;
-    let mut bias: OutletId = invocation.named_arg_as(builder, "bias")?;
+    let kernel: Arc<Tensor> = invocation.named_arg_as(builder, "filter")?;
     let input_fact = builder.model.outlet_fact(input)?.clone();
-    let kernel_fact = builder.model.outlet_fact(kernel)?.clone();
-
-    let name = builder.generate_node_name();
-    while let Some((axis, _)) = builder
-        .model
-        .outlet_fact(bias)?
-        .shape
-        .to_tvec()
-        .iter()
-        .enumerate()
-        .rev()
-        .find(|(_, dim)| dim.is_one())
-    {
-        bias =
-            builder.model.wire_node(format!("{name}.bias_rm_{axis}"), AxisOp::Rm(axis), &[bias])?
-                [0];
+    if input_fact.rank() != kernel.rank() {
+        bail!(
+            "Convolution input expected as NCHW, filter as OIHW. Got {:?} and {:?}.",
+            input_fact,
+            kernel
+        );
     }
+    let mut inputs = tvec!(input);
 
-    let mut inputs = tvec!(input, kernel, bias);
-    let (group, pool_spec) = read_conv_parameters(
-        builder,
-        invocation,
-        kernel_fact.shape.as_concrete().context("Except fixed kernel shape")?,
-        &input_fact,
-    )?;
+    let (group, pool_spec) =
+        read_conv_parameters(builder, invocation, kernel.shape(), &input_fact)?;
 
-    let output_dt: Option<DatumType> = if input_fact.datum_type.is_float() {
+    let output_dt =
+        invocation.dt_from_quant_file.get(0).cloned().flatten().unwrap_or(DatumType::F32);
+    if let (Some(a), Some(b), Some(c)) =
+        (kernel.datum_type().qparams(), input_fact.datum_type.qparams(), output_dt.qparams())
+    {
+        inputs.push(builder.add_const(tensor0(a.zp_scale().0))?);
+        inputs.push(builder.add_const(tensor0(a.zp_scale().1))?);
+        inputs.push(builder.add_const(tensor0(b.zp_scale().0))?);
+        inputs.push(builder.add_const(tensor0(b.zp_scale().1))?);
+        inputs.push(builder.add_const(tensor0(c.zp_scale().0))?);
+        inputs.push(builder.add_const(tensor0(c.zp_scale().1))?);
+    };
+    let bias: Arc<Tensor> = invocation.named_arg_as(builder, "bias")?;
+
+    // Remove or reshape bias for efficient processing
+    let bias: Option<Tensor> = if bias.is_uniform() && bias.cast_to_scalar::<f32>()? == 0.0 {
         None
-    } else if let Some(dt) = invocation.dt_from_quant_file.get(0).cloned().flatten() {
-        Some(dt)
+    } else if bias.rank() > 1 {
+        let output_channels = kernel.shape()[0];
+        ensure!(
+            output_channels == bias.len(),
+            "Bias tensor should be scalar or have one value per output channel"
+        );
+        let mut reshaped_bias = bias.into_tensor();
+        reshaped_bias.set_shape(&[output_channels])?;
+        Some(reshaped_bias)
     } else {
-        Some(DatumType::I32)
+        Some(bias.into_tensor())
     };
 
     let op: Box<dyn TypedOp> = if deconv {
@@ -367,16 +374,27 @@ pub fn conv_or_deconv(
         } else {
             tvec!(0; pool_spec.rank())
         };
-        Box::new(Deconv::new(pool_spec, KernelFormat::OIHW, adjustments, group))
+        // nnef form is O I/g H W
+        // tract expects O/g I H W
+        let kernel =
+            kernel.into_tensor().split_axis(0, group)?.move_axis(0, 1)?.collapse_axis_with_next(1);
+        Box::new(DeconvUnary::new(
+            pool_spec,
+            KernelFormat::OIHW,
+            kernel.into_arc_tensor(),
+            bias.map(Tensor::into_arc_tensor),
+            adjustments,
+            group,
+        ))
     } else {
-        if let Some(odt) = &output_dt {
-            for dt in &[&input_fact.datum_type, &kernel_fact.datum_type, odt] {
-                let qp = dt.qparams().unwrap_or_default();
-                inputs.push(builder.add_const(tensor0(qp.zp_scale().0))?);
-                inputs.push(builder.add_const(tensor0(qp.zp_scale().1))?);
-            }
-        }
-        Box::new(Conv::new(pool_spec, KernelFormat::OIHW, group, output_dt))
+        Box::new(ConvUnary::new(
+            pool_spec,
+            KernelFormat::OIHW,
+            kernel.clone(),
+            group,
+            bias.map(Tensor::into_arc_tensor),
+            Some(output_dt).filter(|dt| dt.is_quantized()),
+        ))
     };
     builder.wire(op, &inputs)
 }
@@ -384,14 +402,11 @@ pub fn conv_or_deconv(
 fn pool_spec_for_pools(
     builder: &mut ModelBuilder,
     invocation: &ResolvedInvocation,
-    kernel_shape: &[usize],
-    channels: usize,
+    shape: &[usize],
 ) -> TractResult<ops::cnn::PoolSpec> {
-    let kernel_shape = DataFormat::NCHW.shape(kernel_shape)?;
-    let spatial_shape = kernel_shape.hw_dims();
+    let spatial_shape = DataFormat::NCHW.shape(shape)?.hw_dims().into();
     let dilation: TVec<usize> = invocation.named_arg_as(builder, "dilation")?;
-    if dilation.len() > 0
-        && (dilation.len() != kernel_shape.rank() || dilation[0] != 1 || dilation[1] != 1)
+    if dilation.len() > 0 && (dilation.len() != shape.len() || dilation[0] != 1 || dilation[1] != 1)
     {
         bail!("dilation should be like [1, 1, ... ]. Got dilation {:?}.", dilation);
     }
@@ -401,8 +416,7 @@ fn pool_spec_for_pools(
         Some(DataFormat::NCHW.shape(&dilation)?.hw_dims().into())
     };
     let stride: TVec<usize> = invocation.named_arg_as(builder, "stride")?;
-    if stride.len() > 0 && (stride.len() != kernel_shape.rank() || stride[0] != 1 || stride[1] != 1)
-    {
+    if stride.len() > 0 && (stride.len() != shape.len() || stride[0] != 1 || stride[1] != 1) {
         bail!("stride should be like [1, 1, ... ]. Got stride {:?}.", stride);
     }
     let spatial_stride = if stride.len() == 0 || stride.iter().all(|it| *it == 1) {
@@ -429,12 +443,11 @@ fn pool_spec_for_pools(
     };
     Ok(PoolSpec::new(
         DataFormat::NCHW,
-        spatial_shape.into(),
+        spatial_shape,
         padding,
         spatial_dilation,
         spatial_stride,
-        channels,
-        channels,
+        None,
     ))
 }
 
@@ -458,15 +471,10 @@ pub fn max_pool_with_index(
             size
             );
     }
-    let channels = DataFormat::NCHW
-        .shape(&input_fact.shape)?
-        .c()
-        .to_usize()
-        .context("Expect constant channel depth")?;
     let border: String = invocation.named_arg_as(builder, "border")?;
     assert!(&*border == "ignore" || &*border == "constant");
     //FIXME : constant is not actually supported, but it should be the same in most cases
-    let pool_spec = pool_spec_for_pools(builder, invocation, &size, channels)?;
+    let pool_spec = pool_spec_for_pools(builder, invocation, &size)?;
     let op = ops::cnn::MaxPool { pool_spec, with_index_outputs: Some(i64::datum_type()) };
     builder.wire(op, &[input])
 }
@@ -488,14 +496,9 @@ pub fn sum_pool(builder: &mut ModelBuilder, invocation: &ResolvedInvocation) -> 
             size
             );
     }
-    let channels = DataFormat::NCHW
-        .shape(&input_fact.shape)?
-        .c()
-        .to_usize()
-        .context("Expect constant channel depth")?;
     let border: String = invocation.named_arg_as(builder, "border")?;
     assert!(&*border == "ignore" || &*border == "constant");
-    let pool_spec = pool_spec_for_pools(builder, invocation, &size, channels)?;
+    let pool_spec = pool_spec_for_pools(builder, invocation, &size)?;
     let op = ops::cnn::SumPool {
         pool_spec,
         count_include_pad: false,
@@ -680,11 +683,8 @@ pub fn softmax(builder: &mut ModelBuilder, invocation: &ResolvedInvocation) -> T
     let axes: TVec<usize> = invocation.named_arg_as(builder, "axes")?;
 
     let input_fact = builder.model.outlet_fact(x)?.clone();
-    let quant_output_dt = if input_fact.datum_type.is_float() {
-        None
-    } else {
-        invocation.dt_from_quant_file.get(0).cloned().flatten()
-    };
+    let output_dt =
+        invocation.dt_from_quant_file.get(0).cloned().flatten().unwrap_or(input_fact.datum_type);
 
-    builder.wire(ops::nn::Softmax { axes, quant_output_dt }, &[x])
+    builder.wire(ops::nn::Softmax { axes, output_dt }, &[x])
 }

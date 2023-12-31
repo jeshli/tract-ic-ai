@@ -357,7 +357,7 @@ where
             .model()
             .input_outlets()?
             .get(input)
-            .with_context(|| format!("Invalid input id for model ({input})."))?;
+            .ok_or_else(|| format_err!("Invalid input id for model ({}).", input))?;
         let SimpleState { plan, session_state, .. } = self;
         let plan = (*plan).borrow();
         let model = plan.model.borrow();
@@ -370,7 +370,11 @@ where
         ensure!(
             fact.matches(&t, Some(&self.session_state.resolved_symbols))
             .with_context(|| format!("Setting input {input}"))?,
-            "Input at index {input} has incorrect dtype or shape (got {t:?}, expected to match fact {fact:?})",
+            "Input at index {} has incorrect dtype or shape (got shape {:?} and dtype {:?}, expected to match fact {:?})",
+            input,
+            t.shape(),
+            t.datum_type(),
+            fact
             );
         self.session_state.inputs.insert(outlet.node, t);
         Ok(())
@@ -550,13 +554,11 @@ where
     F: Fact + Clone + 'static,
     O: Debug + Display + AsRef<dyn Op> + AsMut<dyn Op> + Clone + 'static,
 {
-    // eprint!("{node} {input:?}");
     let r = match state {
         Some(ref mut state) => state.eval(session_state, node.op(), input),
         None => node.op().eval(input),
     }
     .with_context(|| format!("Evaluating {node}"));
-    // eprintln!(" ==> {}", r.as_ref().unwrap()[0].dump(true)?);
     r
 }
 

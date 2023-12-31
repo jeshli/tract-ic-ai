@@ -248,6 +248,7 @@ where
     }
 }
 
+
 impl<'a> AttrTVecType<'a> for Tensor {
     fn get_attr_opt_tvec(node: &'a NodeProto, name: &str) -> TractResult<Option<TVec<Self>>> {
         node.get_attr_opt_with_type(name, AttributeType::Tensors)?

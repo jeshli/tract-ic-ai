@@ -11,6 +11,8 @@ pub struct SumPool {
     pub normalize: bool,
 }
 
+
+
 impl Op for SumPool {
     fn name(&self) -> Cow<str> {
         "SumPool".into()
@@ -64,6 +66,8 @@ pub struct LirSumPool {
     pub normalize: bool,
     pub geometry: PoolGeometry,
 }
+
+
 
 impl Op for LirSumPool {
     fn name(&self) -> Cow<str> {

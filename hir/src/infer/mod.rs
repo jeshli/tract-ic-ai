@@ -6,10 +6,10 @@ pub mod helpers;
 pub mod rules;
 
 mod analyser;
-mod fact;
+pub mod fact;
 mod factoid;
 mod model;
-mod ops;
+pub mod ops;
 mod optim;
 
 pub use self::fact::InferenceFact;

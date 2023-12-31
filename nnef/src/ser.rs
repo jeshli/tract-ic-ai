@@ -4,32 +4,9 @@ use tract_core::ndarray::ArrayViewD;
 use tract_core::ndarray::Axis;
 use tract_itertools::Itertools;
 
-pub fn rewrite_model(model: &mut TypedModel) -> TractResult<()> {
-    tract_core::ops::einsum::rewrite_einsums_as_matmul(model)?;
-    Rewriter::default()
-        .with_rule_for("rewrite_conv_with_n_axis", tract_core::ops::cnn::rewrite_conv_with_n_axis)
-        .with_rule_for(
-            "rewrite_deconv_with_n_axis",
-            tract_core::ops::cnn::rewrite_deconv_with_n_axis,
-        )
-        .with_rule_for(
-            "rewrite_kernel_conv_in_oihw",
-            crate::ops::nnef::ser::rewrite_kernel_conv_in_oihw,
-        )
-        .with_rule_for(
-            "rewrite_kernel_deconv_in_oihw",
-            crate::ops::nnef::ser::rewrite_kernel_deconv_in_oihw,
-        )
-        .with_rule_for(
-            "rewrite_consistent_quantized_conv",
-            crate::ops::nnef::ser::rewrite_consistent_quantized_conv,
-        )
-        .rewrite(&(), model)
-}
-
 pub fn to_proto_model(framework: &Nnef, model: &TypedModel) -> TractResult<ProtoModel> {
     let mut fixed_model = model.clone();
-    rewrite_model(&mut fixed_model)?;
+    tract_core::ops::einsum::rewrite_einsums_as_matmul(&mut fixed_model)?;
     let mut into_ast = IntoAst::new(framework, &fixed_model);
     into_ast.translate().context("Translating model to AST")?;
     into_ast.into_proto_model().context("Translating AST to proto model")
@@ -288,6 +265,19 @@ impl<'a> IntoAst<'a> {
         Identifier(name)
     }
 
+    /*
+    pub fn sanitize(name: impl Into<String>) -> String {
+        let mut name = name.into();
+        if name.len() > 0
+            && !char::is_alphabetic(name.chars().next().unwrap())
+            && !name.starts_with('_')
+        {
+            name = "_".to_string() + &name;
+        }
+        name.replace(['/', '.', '-', ':', ',', ';'], "_")
+    }
+    */
+
     pub fn force_variable(&mut self, name: impl AsRef<str>, exp: &Arc<RValue>) -> Arc<RValue> {
         if let RValue::Identifier(_) = exp.as_ref() {
             exp.clone()
@@ -330,16 +320,13 @@ impl<'a> IntoAst<'a> {
         self.do_konst(name, tensor, true)
     }
 
-    fn dump_rec_tensor<T: Datum>(
-        t: &ArrayViewD<T>,
-        el: impl for<'t> Fn(&'t T) -> RValue + Copy,
-    ) -> RValue {
+    fn dump_rec_tensor<T: Datum>(t: &ArrayViewD<T>, el: impl for<'t> Fn(&'t T) -> RValue + Copy) -> RValue {
         if t.ndim() == 0 {
             el(&t.as_slice().unwrap()[0])
         } else {
-            let values: TVec<RValue> = (0..t.shape()[0])
-                .map(|i| Self::dump_rec_tensor(&t.index_axis(Axis(0), i), el))
-                .collect();
+            let values:TVec<RValue> = (0..t.shape()[0]).map(|i|
+                Self::dump_rec_tensor(&t.index_axis(Axis(0), i), el)
+            ).collect();
             array(values)
         }
     }
@@ -351,39 +338,27 @@ impl<'a> IntoAst<'a> {
         force_variable: bool,
     ) -> TractResult<Arc<RValue>> {
         let mut name: Identifier = name.as_ref().into();
-        let have_tract_core = self.ensure_registry(&"tract_core".into()).is_ok();
         if !force_variable && tensor.len() <= 8 {
             if tensor.datum_type() == String::datum_type() {
-                return Ok(Self::dump_rec_tensor(&tensor.to_array_view::<String>()?, |f| {
-                    string(f)
-                })
-                .into());
+                return Ok(Self::dump_rec_tensor(&tensor.to_array_view::<String>()?, |f| string(f) ).into());
             } else if tensor.datum_type() == DatumType::F32 {
-                return Ok(
-                    Self::dump_rec_tensor(&tensor.to_array_view::<f32>()?, |f| numeric(f)).into()
-                );
-            } else if have_tract_core && tensor.datum_type() == DatumType::F16 {
-                let array = Self::dump_rec_tensor(&tensor.to_array_view::<f16>()?, |f| numeric(f)).into();
-                return Ok(invocation("tract_core_cast", &[array], &[("to", string("f16"))]));
-            } else if have_tract_core && tensor.datum_type().is_integer() {
+                return Ok(Self::dump_rec_tensor(&tensor.to_array_view::<f32>()?, |f| numeric(f) ).into());
+            } else if self.ensure_registry(&"tract_core".into()).is_ok() {
                 if let Ok(value) = tensor.cast_to::<i64>() {
-                    let value =
-                        Self::dump_rec_tensor(&value.to_array_view::<i64>().unwrap(), |i| {
-                            numeric(i)
-                        });
+                    let value = Self::dump_rec_tensor(&value.to_array_view::<i64>().unwrap(), |i| numeric(i));
                     let to = string(format!("{:?}", tensor.datum_type()).to_lowercase());
                     return Ok(invocation("tract_core_cast", &[value.into()], &[("to", to)]));
                 }
             };
         }
-
+        
         if self.tensors.contains_key(&name) {
             name = (0..)
                 .map(|it| Identifier::from(&*format!("{}_{}", name.0, it)))
                 .find(|it| !self.tensors.contains_key(it))
                 .unwrap();
         }
-
+        
         self.tensors.insert(name.clone(), tensor.clone());
         let id = self.scoped_id(&name);
         self.assignment(

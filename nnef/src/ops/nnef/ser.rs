@@ -4,14 +4,8 @@ use crate::internal::*;
 use crate::ser::*;
 use tract_core::num_traits::Zero;
 use tract_core::ops;
-use tract_core::ops::cast::cast;
-use tract_core::ops::cnn::Conv;
-use tract_core::ops::cnn::Deconv;
-use tract_core::ops::cnn::KernelFormat;
 use tract_core::ops::cnn::PoolSpec;
-use tract_core::ops::einsum::BasicMatMul;
 use tract_core::ops::nn::DataFormat;
-use tract_core::tract_data::itertools::Itertools;
 
 pub fn source(
     ast: &mut IntoAst,
@@ -29,23 +23,6 @@ pub fn source(
         }
     };
     Ok(None)
-}
-
-pub fn basic_matmul(ast: &mut IntoAst, node: &TypedNode, op: &BasicMatMul) -> TractResult<Option<Arc<RValue>>> {
-    let inputs = node.inputs.iter().map(|i| (*ast.mapping[i]).clone()).collect_vec();
-    if op.transpose_c {
-        Ok(Some(invocation(
-            "matmul",
-            &[Arc::new(inputs[1].clone()), Arc::new(inputs[0].clone())],
-            &[("transposeA", logical(!op.transpose_b)), ("transposeB", logical(!op.transpose_a))],
-        )))
-    } else {
-        Ok(Some(invocation(
-            "matmul",
-            &[Arc::new(inputs[0].clone()), Arc::new(inputs[1].clone())],
-            &[("transposeA", logical(op.transpose_a)), ("transposeB", logical(op.transpose_b))],
-        )))
-    }
 }
 
 pub fn konst(
@@ -207,15 +184,17 @@ pub fn conv_or_deconv(
     ast: &mut IntoAst,
     node: &TypedNode,
     pool_spec: &PoolSpec,
+    weights: Tensor,
+    bias: &Option<Arc<Tensor>>,
     group: usize,
     deconv: bool,
     adjustments: Option<&[usize]>,
 ) -> TractResult<Option<Arc<RValue>>> {
     let mut wire = ast.mapping[&node.inputs[0]].clone();
-    let kernel = ast.mapping[&node.inputs[1]].clone();
-    let bias = ast.mapping[&node.inputs[2]].clone();
     let data_format = pool_spec.data_format;
-    ensure!(data_format.has_n());
+    if !data_format.has_n() {
+        wire = invocation("unsqueeze", &[wire], &[("axes", ints(&[0]))]);
+    }
     if data_format.c_is_last() {
         let mut perm: TVec<usize> = (0..pool_spec.rank() + 1).collect();
         perm.insert(1, pool_spec.rank() + 1);
@@ -223,7 +202,12 @@ pub fn conv_or_deconv(
     }
     wire = ast.force_variable(format!("{}_input", node.name), &wire);
 
-    let inputs = tvec![wire, kernel, bias];
+    let mut inputs = tvec![wire];
+    inputs.push(ast.konst_variable(format!("{}_weigths", node.name), &weights.into_arc_tensor())?);
+    if let Some(bias) = bias.as_ref() {
+        inputs.push(ast.konst(format!("{}_bias", node.name), bias)?);
+    }
+
     let named_args = make_conv_named_args(node, pool_spec, group, deconv, adjustments)?;
 
     let name = if deconv { "deconv" } else { "conv" };
@@ -241,23 +225,55 @@ pub fn conv_or_deconv(
         perm.push(1);
         wire = invocation("transpose", &[wire], &[("axes", ints(&perm))]);
     }
+    if !data_format.has_n() {
+        wire = invocation("squeeze", &[wire], &[("axes", ints(&[0]))]);
+    }
+
     Ok(Some(wire))
 }
 
 pub fn conv(
     ast: &mut IntoAst,
     node: &TypedNode,
-    op: &ops::cnn::conv::Conv,
+    op: &ops::cnn::conv::ConvUnary,
 ) -> TractResult<Option<Arc<RValue>>> {
-    conv_or_deconv(ast, node, &op.pool_spec, op.group, false, None)
+    if op.q_params.is_some() && !node.outputs[0].fact.datum_type.is_quantized() {
+        return Ok(None);
+    }
+    // tract HWIO: H W I/g O
+    // tract OIHW: O I/g H W
+    // nnef: O I/g H W
+    let mut kernel = op.kernel.clone().into_tensor();
+    if op.kernel_fmt == ops::cnn::KernelFormat::HWIO {
+        let geo_rank = op.kernel.rank() - 2;
+        kernel = kernel.move_axis(geo_rank, 0)?.move_axis(geo_rank + 1, 0)?;
+    }
+    conv_or_deconv(ast, node, &op.pool_spec, kernel, &op.bias, op.group, false, None)
 }
 
 pub fn deconv(
     ast: &mut IntoAst,
     node: &TypedNode,
-    op: &ops::cnn::deconv::Deconv,
+    op: &ops::cnn::deconv::DeconvUnary,
 ) -> TractResult<Option<Arc<RValue>>> {
-    conv_or_deconv(ast, node, &op.pool_spec, op.group, true, Some(&op.adjustments))
+    // tract HWIO: H W I O/g -> tract OIHW: O/g I H W
+    let mut kernel = op.kernel.clone().into_tensor();
+    if op.kernel_format == ops::cnn::KernelFormat::HWIO {
+        let geo_rank = op.kernel.rank() - 2;
+        kernel = kernel.move_axis(geo_rank, 0)?.move_axis(geo_rank + 1, 0)?;
+    }
+    // tract: O/g I H W -> O I/g H W
+    kernel = kernel.split_axis(1, op.group)?.move_axis(1, 0)?.collapse_axis_with_next(0);
+    conv_or_deconv(
+        ast,
+        node,
+        &op.pool_spec,
+        kernel,
+        &op.bias,
+        op.group,
+        true,
+        Some(&op.adjustments),
+    )
 }
 
 fn cnn_pool_fragment(
@@ -374,11 +390,17 @@ pub fn sum_pool(
     cnn_pool(ast, node, "box", &op.pool_spec, Some(("normalize", logical(op.normalize))))
 }
 
-pub fn ser_axis_op(op: &ops::change_axes::AxisOp, wire: Arc<RValue>, rank: usize) -> Arc<RValue> {
-    match op {
+pub fn axis_op(
+    ast: &mut IntoAst,
+    node: &TypedNode,
+    op: &ops::change_axes::AxisOp,
+) -> TractResult<Option<Arc<RValue>>> {
+    let wire = ast.mapping[&node.inputs[0]].clone();
+    let invoke = match op {
         AxisOp::Rm(axis) => invocation("squeeze", &[wire], &[("axes", ints(&[*axis]))]),
         AxisOp::Add(axis) => invocation("unsqueeze", &[wire], &[("axes", ints(&[*axis]))]),
         AxisOp::Move(from, to) => {
+            let rank = node.outputs[0].fact.rank();
             let mut perm: TVec<usize> = (0..rank).collect();
             if from < to {
                 perm[*from..(to + 1)].rotate_left(1);
@@ -396,17 +418,8 @@ pub fn ser_axis_op(op: &ops::change_axes::AxisOp, wire: Arc<RValue>, rank: usize
                 ("axis_count", numeric(from.len())),
             ],
         ),
-    }
-}
-
-pub fn axis_op(
-    ast: &mut IntoAst,
-    node: &TypedNode,
-    op: &ops::change_axes::AxisOp,
-) -> TractResult<Option<Arc<RValue>>> {
-    let wire = ast.mapping[&node.inputs[0]].clone();
-    let rank = node.outputs[0].fact.rank();
-    Ok(Some(ser_axis_op(op, wire, rank)))
+    };
+    Ok(Some(invoke))
 }
 
 pub fn reduce(
@@ -459,99 +472,4 @@ pub fn softmax(
         &[ast.mapping[&node.inputs[0]].clone()],
         &[("axes", RValue::Literal(crate::ast::Literal::Array(litteral_axes)))],
     )))
-}
-
-pub fn rewrite_consistent_quantized_conv(
-    _ctx: &(),
-    model: &TypedModel,
-    node: &TypedNode,
-    name: &str,
-    op: &Conv,
-) -> TractResult<Option<TypedModelPatch>> {
-    let facts = model.node_input_facts(node.id)?;
-    if facts.len() > 3 && facts[3..9].iter().all(|fact| fact.konst.is_some()) {
-        for ix in [0, 1] {
-            let fact = model.outlet_fact(node.inputs[ix])?;
-            if !fact.datum_type.is_quantized() {
-                let mut patch = TypedModelPatch::default();
-                let mut wire = patch.taps(model, &node.inputs)?;
-                let dt = fact.datum_type.quantize(QParams::ZpScale {
-                    zero_point: facts[3 + 2 * ix]
-                        .konst
-                        .as_ref()
-                        .unwrap()
-                        .cast_to_scalar::<i32>()?,
-                    scale: facts[4 + 2 * ix].konst.as_ref().unwrap().cast_to_scalar::<f32>()?,
-                });
-                wire[ix] =
-                    patch.wire_node(format!("{name}.cast_to_q_{ix}"), cast(dt), &[wire[ix]])?[0];
-                let output = patch.wire_node(name, op.clone(), &wire)?[0];
-                patch.shunt_outside(model, node.id.into(), output)?;
-                return Ok(Some(patch));
-            }
-        }
-    }
-    Ok(None)
-}
-
-pub fn rewrite_kernel_conv_in_oihw(
-    _ctx: &(),
-    model: &TypedModel,
-    node: &TypedNode,
-    name: &str,
-    conv: &Conv,
-) -> TractResult<Option<TypedModelPatch>> {
-    rewrite_kernel_in_oihw(
-        model,
-        node,
-        name,
-        conv.kernel_fmt,
-        conv.group,
-        Box::new(Conv { kernel_fmt: KernelFormat::OIHW, ..conv.clone() }),
-    )
-}
-
-pub fn rewrite_kernel_deconv_in_oihw(
-    _ctx: &(),
-    model: &TypedModel,
-    node: &TypedNode,
-    name: &str,
-    conv: &Deconv,
-) -> TractResult<Option<TypedModelPatch>> {
-    rewrite_kernel_in_oihw(
-        model,
-        node,
-        name,
-        conv.kernel_format,
-        conv.group,
-        Box::new(Deconv { kernel_format: KernelFormat::OIHW, ..conv.clone() }),
-    )
-}
-
-fn rewrite_kernel_in_oihw(
-    model: &TypedModel,
-    node: &TypedNode,
-    name: &str,
-    fmt: KernelFormat,
-    group: usize,
-    new: Box<dyn TypedOp>,
-) -> TractResult<Option<TypedModelPatch>> {
-    if fmt == KernelFormat::OIHW {
-        return Ok(None);
-    }
-    let mut patch = TypedModelPatch::default();
-    let mut wire = patch.taps(model, &node.inputs)?;
-    let prefix = format!("{name}.kernel_reorg");
-    for (ix, op) in fmt
-        .kernel_as_group_o_i_h_w_ops(&patch.outlet_fact(wire[1])?.shape, group)
-        .into_iter()
-        .enumerate()
-    {
-        wire[1] = patch.wire_node(format!("{prefix}.{ix}"), op, &[wire[1]])?[0];
-    }
-    wire[1] =
-        AxisOp::wire_collapse_axis(&mut patch, format!("{name}.kernel_reorg_go"), wire[1], 0)?[0];
-    wire = patch.wire_node(name, new, &wire)?;
-    patch.shunt_outside(model, node.id.into(), wire[0])?;
-    Ok(Some(patch))
 }

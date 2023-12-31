@@ -26,12 +26,6 @@ element_wise_oop!(quantize_linear_u8,
      scale: f32,
      zero_point: u8
  },
- [f16] => u8 |op, xs, ys| {
-     xs.iter().zip(ys.iter_mut()).for_each(|(x,y)|
-                                           *y = quantize_linear_f32_u8(x.to_f32(), op.scale, op.zero_point as i32)
-                                          );
-     Ok(())
- },
  [f32,i32] => u8 |op, xs, ys| {
      xs.iter().zip(ys.iter_mut()).for_each(|(x,y)|
                                            *y = quantize_linear_f32_u8(*x as f32, op.scale, op.zero_point as i32)
@@ -279,33 +273,32 @@ impl crate::ops::binary::BinMiniOp for Scale {
     }
 
     fn result_datum_type(&self, a: DatumType, b: DatumType) -> TractResult<DatumType> {
-        if !a.is_float() {
-            bail!("Scale left operand must be float, got {:?}", a);
+        if a != f32::datum_type() {
+            bail!("Scale left operand must be f32, got {:?}", a);
         }
         Ok(b)
     }
 
     fn operating_datum_type(&self, a: DatumType, b: DatumType) -> TractResult<DatumType> {
-        if !a.is_float() {
-            bail!("Scale left operand must be float, got {:?}", a);
+        if a != f32::datum_type() {
+            bail!("Scale left operand must be f32, got {:?}", a);
         }
         Ok(b)
     }
 
     fn eval_uniform_in_place(&self, a: &Tensor, b: &mut Tensor) -> TractResult<()> {
-        let a = a.cast_to_scalar::<f32>()?;
+        let a = a.to_scalar::<f32>()?;
         unsafe fn eval_in_place_t<T: Datum + AsPrimitive<f32>>(a: f32, b: &mut Tensor)
         where
             f32: AsPrimitive<T>,
         {
             b.as_slice_mut_unchecked::<T>().iter_mut().for_each(|x| *x = scale_by(*x, a));
         }
-        unsafe { dispatch_numbers!(eval_in_place_t(b.datum_type())(a, b)) }
+        unsafe { dispatch_numbers!(eval_in_place_t(b.datum_type())(*a, b)) }
         Ok(())
     }
 
     fn eval_unicast_in_place(&self, a: &Tensor, b: &mut Tensor) -> TractResult<()> {
-        let a = a.cast_to::<f32>()?;
         let a = a.to_array_view::<f32>()?;
         unsafe fn eval_in_place_t<T: Datum + AsPrimitive<f32>>(
             a: &ndarray::ArrayViewD<f32>,
@@ -321,7 +314,6 @@ impl crate::ops::binary::BinMiniOp for Scale {
     }
 
     fn eval_out_of_place(&self, c: &mut Tensor, a: &Tensor, b: &Tensor) -> TractResult<()> {
-        let a = a.cast_to::<f32>()?;
         let a = a.to_array_view::<f32>()?;
         unsafe fn eval_out_of_place_t<T: Datum + AsPrimitive<f32>>(
             c: &mut Tensor,
@@ -342,6 +334,7 @@ impl crate::ops::binary::BinMiniOp for Scale {
     }
 
     fn eval_in_a(&self, a: &mut Tensor, b: &Tensor) -> TractResult<()> {
+        // a is f32 by construction (scaler). if we are here in mean c is also f32, so b is f32
         let a = a.to_array_view_mut::<f32>()?;
         let b = b.to_array_view::<f32>()?;
         ndarray::Zip::from(a).and_broadcast(b).for_each(|a, b| *a = scale_by(*b, *a));
@@ -355,7 +348,7 @@ impl crate::ops::binary::BinMiniOp for Scale {
     ) -> TractResult<Option<TypedModelPatch>> {
         let a = model.outlet_fact(node.inputs[0])?;
         if let Some(a) = &a.uniform {
-            if a.cast_to_scalar::<f32>()? == 1. {
+            if *a.to_scalar::<f32>()? == 1. {
                 return Ok(Some(TypedModelPatch::rewire(
                     model,
                     &node.inputs[1..2],
@@ -363,7 +356,7 @@ impl crate::ops::binary::BinMiniOp for Scale {
                     &|_p, x| Ok(x.into()),
                 )?));
             } else if node.outputs[0].fact.datum_type == DatumType::I32 {
-                let factor = a.cast_to_scalar::<f32>()?;
+                let factor = *a.to_scalar::<f32>()?;
                 let scaler = Scaler::new(factor, RoundingPolicy::Even);
 
                 let op = ElementWiseOp(Box::new(QScale { scaler }));
@@ -388,46 +381,6 @@ where
 
 pub fn scale() -> TypedBinOp {
     TypedBinOp(Box::new(Scale))
-}
-
-/// Offsets i8 integers as u8 integers.
-pub(crate) fn offset_i8_as_u8_elementwise(x: i8) -> u8 {
-    (x as u8).wrapping_add(128)
-}
-
-#[derive(Debug, Clone)]
-pub struct OffsetI8asU8 {}
-impl ElementWiseMiniOp for OffsetI8asU8 {
-    fn name(&self) -> String {
-        format!("{}{}", self.prefix(), stringify!(OffsetI8asU8))
-    }
-    fn output_type(&self, input_type: DatumType) -> Option<DatumType> {
-        Some(if let DatumType::QI8(qp) = input_type {
-            let (zp, scale) = qp.zp_scale();
-            DatumType::QU8(QParams::ZpScale { zero_point: zp + 128, scale })
-        } else if input_type == DatumType::I8 {
-            DatumType::U8
-        } else {
-            input_type
-        })
-    }
-    fn eval_out_of_place(&self, t: &Tensor) -> TractResult<Tensor> {
-        let output_type = self.output_type(t.datum_type()).unwrap();
-        let mut dst = unsafe { Tensor::uninitialized_dt(output_type, t.shape())? };
-        if t.datum_type().unquantized() == i8::datum_type() {
-            t.as_slice::<i8>()?
-                .iter()
-                .zip(dst.as_slice_mut::<u8>()?.iter_mut())
-                .for_each(|(x, y)| *y = offset_i8_as_u8_elementwise(*x));
-            return Ok(dst);
-        }
-
-        bail!("{} does not support {:?}", self.name(), t.datum_type());
-    }
-}
-
-pub fn offset_i8_as_u8() -> ElementWiseOp {
-    ElementWiseOp(Box::new(OffsetI8asU8 {}))
 }
 
 /// Offsets u8 integers as i8 integers.

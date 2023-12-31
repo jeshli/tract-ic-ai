@@ -36,8 +36,8 @@
 use std::collections::HashMap;
 use std::str;
 
-mod fact;
-mod graph;
+pub mod fact;
+pub mod graph;
 mod node;
 pub mod order;
 mod patch;

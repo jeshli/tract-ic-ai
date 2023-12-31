@@ -1,7 +1,7 @@
 use crate::infer::*;
 use crate::internal::*;
-use crate::ops::cast::cast;
 
+use tract_core::ops::cnn::conv::ConvUnary;
 use tract_core::ops::cnn::conv::KernelFormat;
 use tract_core::ops::cnn::{PaddingSpec, PoolSpec};
 use tract_core::ops::nn::DataFormat;
@@ -181,48 +181,33 @@ impl Expansion for Conv {
         model: &mut TypedModel,
         inputs: &[OutletId],
     ) -> TractResult<TVec<OutletId>> {
-        let kernel_input = self.k_input.unwrap_or(1);
-        let kernel_fact = model.outlet_fact(inputs[kernel_input])?.clone();
+        let kernel = model
+            .outlet_fact(inputs[self.k_input.unwrap_or(1)])?
+            .konst
+            .clone()
+            .context("Kernel must be const")?;
         let input = model.outlet_fact(inputs[0])?.clone();
         let input_shape = self.data_format.shape(input.shape.iter().collect::<TVec<_>>())?;
-        let kernel_full_shape =
-            kernel_fact.shape.as_concrete().context("Expect concrete shape for kernel")?;
+        let kernel_full_shape = kernel.shape();
         let group = self.group.unwrap_or(1);
-        let input_channels = self.kernel_fmt.input_channels(kernel_full_shape, group).into_owned();
-        let output_channels =
-            self.kernel_fmt.output_channels(kernel_full_shape, group).into_owned();
+        let input_channels = self.kernel_fmt.input_channels(kernel_full_shape, group);
+        let output_channels = self.kernel_fmt.output_channels(kernel_full_shape, group);
         if input_shape.c_dim() != &input_channels.to_dim() {
             bail!("Input has {} channels, kernel expects {}", input_shape.c_dim(), input_channels)
         }
-        let mut bias = if let Some(slot) = self.bias_input {
-            inputs[slot]
+        let bias = if let Some(slot) = self.bias_input {
+            Some(model.outlet_fact(inputs[slot])?.konst.clone().context("Bias must be const")?)
         } else {
-            model.add_const(
-                format!("{prefix}.bias"),
-                Tensor::zero_scalar_dt(model.outlet_fact(inputs[0])?.datum_type)?,
-            )?
+            None
         };
-        while let Some(axis) = model
-            .outlet_fact(bias)?
-            .shape
-            .to_tvec()
-            .iter()
-            .enumerate()
-            .rev()
-            .position(|(_, dim)| dim.is_one())
-        {
-            bias =
-                model.wire_node(format!("{prefix}.bias_rm_{axis}"), AxisOp::Rm(axis), &[bias])?[0];
-        }
-        let mut wires = vec![inputs[0], inputs[kernel_input], bias];
+        let mut wires = vec!(inputs[0]);
         let pool_spec = PoolSpec {
             data_format: self.data_format,
             padding: self.padding.clone(),
             strides: self.strides.clone(),
             dilations: self.dilations.clone(),
             kernel_shape: self.kernel_fmt.hw(kernel_full_shape).into(),
-            input_channels,
-            output_channels,
+            output_channel_override: Some(output_channels),
         };
 
         let quantized = self.k_zero_point_input.is_some()
@@ -233,33 +218,24 @@ impl Expansion for Conv {
             || self.y_scale_input.is_some();
         let output_type = self.override_output_datum_type.unwrap_or(input.datum_type);
         if quantized {
-            let zero = model.add_const(format!("{prefix}.zero"), tensor0(0i32))?;
+            let zero = model
+                .add_const(format!("{prefix}.zero"), Tensor::zero_scalar_dt(input.datum_type)?)?;
             let one = model.add_const(format!("{prefix}.one"), tensor0(1f32))?;
 
-            macro_rules! qp {
-                ($id: ident, $def: expr, $ty: ty) => {
-                    let wire = self.$id.map(|i| inputs[i]).unwrap_or($def);
-                    let wire = model.wire_node(
-                        format!("{prefix}.cast_{}", stringify!($id)),
-                        cast(<$ty>::datum_type()),
-                        &[wire],
-                    )?[0];
-                    wires.push(wire);
-                };
-            }
-
-            qp!(x_zero_point_input, zero, i32);
-            qp!(x_scale_input, one, f32);
-            qp!(k_zero_point_input, zero, i32);
-            qp!(k_scale_input, one, f32);
-            qp!(y_zero_point_input, zero, i32);
-            qp!(y_scale_input, one, f32);
+            wires.push(self.k_zero_point_input.map(|i| inputs[i]).unwrap_or(zero));
+            wires.push(self.k_scale_input.map(|i| inputs[i]).unwrap_or(one));
+            wires.push(self.x_zero_point_input.map(|i| inputs[i]).unwrap_or(zero));
+            wires.push(self.x_scale_input.map(|i| inputs[i]).unwrap_or(one));
+            wires.push(self.y_zero_point_input.map(|i| inputs[i]).unwrap_or(zero));
+            wires.push(self.y_scale_input.map(|i| inputs[i]).unwrap_or(one));
         };
 
-        let reduced = tract_core::ops::cnn::Conv::new(
+        let reduced = ConvUnary::new(
             pool_spec,
             self.kernel_fmt,
+            kernel,
             group,
+            bias,
             Some(output_type).filter(|_| quantized),
         );
         model.wire_node(prefix, reduced, &wires)

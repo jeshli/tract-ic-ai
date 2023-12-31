@@ -3,8 +3,8 @@ use crate::pb::tensor_proto::DataType;
 use crate::pb::*;
 use prost::Message;
 use std::convert::{TryFrom, TryInto};
-use std::fs;
-use std::path::{Path, PathBuf};
+//use std::fs;
+//use std::path::{Path, PathBuf};
 use tract_hir::internal::*;
 
 impl TryFrom<DataType> for DatumType {
@@ -55,6 +55,7 @@ pub fn translate_inference_fact(
     Ok(fact)
 }
 
+/*
 #[cfg(target_family="wasm")]
 fn extend_bytes_from_path(buf: &mut Vec<u8>, p: impl AsRef<Path>) -> TractResult<()> {
     use std::io::BufRead;
@@ -72,28 +73,7 @@ fn extend_bytes_from_path(buf: &mut Vec<u8>, p: impl AsRef<Path>) -> TractResult
     }
     Ok(())
 }
-
-#[cfg(all(any(windows, unix), not(target_os = "emscripten")))]
-fn extend_bytes_from_path(buf: &mut Vec<u8>, p: impl AsRef<Path>) -> TractResult<()> {
-    let file = fs::File::open(p)?;
-    let mmap = unsafe { memmap2::Mmap::map(&file)? };
-    buf.extend_from_slice(&mmap);
-    Ok(())
-}
-
-fn get_external_resources(t: &TensorProto, path: &str) -> TractResult<Vec<u8>> {
-    let mut tensor_data: Vec<u8> = Vec::new();
-    trace!("number of external file needed for this tensor: {}", t.external_data.len());
-    for external_data in t.external_data.iter()
-    // according to the onnx format, it is possible to have multiple files for one tensor
-    {
-        let p = PathBuf::from(format!("{}/{}", path, external_data.value));
-        trace!("external file detected: {:?}", p);
-        extend_bytes_from_path(&mut tensor_data, p)?;
-        trace!("external file loaded");
-    }
-    Ok(tensor_data)
-}
+*/
 
 fn create_tensor(shape: Vec<usize>, dt: DatumType, data: &[u8]) -> TractResult<Tensor> {
     unsafe {
@@ -122,17 +102,9 @@ fn common_tryfrom(t: &TensorProto, path: Option<&str>) -> TractResult<Tensor> {
     let dt = DataType::from_i32(t.data_type).unwrap().try_into()?;
     let shape: Vec<usize> = t.dims.iter().map(|&i| i as usize).collect();
     // detect if the tensor is rather in an external file than inside the onnx file directly
-    let is_external = t.data_location.is_some() && t.data_location == Some(1);
+    //let is_external = t.data_location.is_some() && t.data_location == Some(1);
     if t.raw_data.len() > 0 {
         create_tensor(shape, dt, &t.raw_data)
-    } else if is_external {
-        if let Some(model_path) = path {
-            // external files will be loaded and fed to the tensor if necessary
-            let external_data = get_external_resources(t, model_path)?;
-            create_tensor(shape, dt, &external_data)
-        } else {
-            bail!("no model path was specified in the parsing context, yet external data was detected. aborting");
-        }
     } else {
         use tract_ndarray::Array;
         let it = match dt {

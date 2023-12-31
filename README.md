@@ -9,22 +9,17 @@
 
 [![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)](https://pypi.org/project/tract/)
 
+## IC-AI
 
-Sonos' Neural Network inference engine.
-
-_This project used to be called tfdeploy, or Tensorflow-deploy-rust._
+This fork of Tract focuses on leaning down the toolkit in order to run Neural Network Inference on the Internet Computer.
+Components which are incompatible with the Internet Computer have been removed. They will be reintroduced with different designs when time allows. 
+The goal of this fork is to increase the modularity and focus of Tract-Onnx.
 
 ## What ?
 
 `tract` is a Neural Network inference toolkit. It can read ONNX or NNEF, optimize them and run them.
 
-## Quick start, examples
-
-* [MobileNet v2 with ONNX](examples/onnx-mobilenet-v2)
-* [BERT example with ONNX](examples/pytorch-albert-v2)
-* [MobileNet v2 with TensorFlow](examples/tensorflow-mobilenet-v2)
-* [From Keras and TensorFlow 2 to tract](examples/keras-tract-tf2)
-* [ResNet with PyTorch](examples/pytorch-resnet)
+## Tract Documentation
 
 There is also [some technical documentation](doc/) and [blog](https://tech-blog.sonos.com/posts/optimising-a-neural-network-for-inference/) posts.
 
@@ -110,72 +105,7 @@ A softer version tag exists as `tract_nnef_format_version`. pre-0.17.0 version s
 `alpha1`, post-0.17.0 set it `beta1`. Don't put too much emphasis into the "alpha-ness" naming 
 of versions here.
 
-### Note: support for TensorFlow 1.x
-
-Even if `tract` is very far from supporting any arbitrary model, it can run
-Google Inception v3 and Snips wake word models. Missing operators are relatively 
-easy to add. The lack of easy to reuse test suite, and the wide diversity of 
-operators in Tensorflow make it difficult to target a full support.
-
-The following operators are implemented and tested:
-
-Abs, Add, AddN, AddV2, Assign, AvgPool, BatchToSpaceND, BiasAdd, BlockLSTM, Cast, Ceil, ConcatV2, Const, Conv2D, DepthwiseConv2dNative, Div, Enter, Equal, Exit, ExpandDims, FakeQuantWithMinMaxVars, Fill, FloorMod, FusedBatchNorm, GatherNd, GatherV2, Greater, GreaterEqual, Identity, Less, LessEqual, Log, LogicalAnd, LogicalOr, LoopCond, MatMul, Max, MaxPool, Maximum, Mean, Merge, Min, Minimum, Mul, Neg, NoOp, Pack, Pad, Placeholder, Pow, Prod, RandomUniform, RandomUniformInt, Range, RealDiv, Relu, Relu6, Reshape, Rsqrt, Shape, Sigmoid, Slice, Softmax, SpaceToBatchND, Squeeze, StridedSlice, Sub, Sum, Switch, Tanh, Tile, Transpose, VariableV2
-
-Additionally, the complexity of TensorFlow 2 make it very unlikely that a direct
-support will ever exist in tract. But many TensorFlow 2 models can be
-converted to ONNX and then loaded in tract.
-
-## Example of supported networks
-
-These models among others, are used to track tract performance evolution as
-part of the Continuous Integration jobs. See [.travis/README.md](readme) and 
-[.travis/bundle-entrypoint.sh](.travis/bundle-entrypoint.sh) for more
-information.
-
-### Keyword spotting on Arm Cortex-M Microcontrollers
-
-https://github.com/ARM-software/ML-KWS-for-MCU
-
-ARM demonstrated the capabilities of the Cortex-M family by providing
-tutorials and pre-trained models for keyword spotting. While the exercise
-is ultimately meant for micro-controllers, `tract` can run the intermediate
-TensorFlow models.
-
-For instance, on a Raspberry Pi Zero, the "CNN M" model runs in about 70
-micro-seconds, and 11 micro-seconds on a Raspberry Pi 3.
-
-### Snips wake word models
-
-https://arxiv.org/abs/1811.07684
-
-Snips uses `tract` to run the wake word detectors. While earlier models were
-class-based and did not require any special treatment, `tract` pulsing
-capabilities made it possible to run WaveNet models efficiently enough for a
-Raspberry Pi Zero.
-
-### Inception v3
-
-|      Device         |      Family    |  TensorFlow-lite  |  tract  |
-|---------------------|----------------|-------------------|---------|
-|  Raspberry Pi Zero  |    Armv6 VFP   |        113s       |   39s   |
-|  Raspberry Pi 2     |    Armv7 NEON  |         25s       |    7s   |
-|  Raspberry Pi 3     |  aarch32 NEON  |          5s       |    5s   |
-
-Notes:
-
- * while the Raspberry Pi 3 is an Armv8 device, this bench is running
-     on Raspbian, an armv6 operating system, crippling the performance
-     of both benches
- * there exists other benches on the internet that show better
-     performance results for TensorFlow (not -Lite) on the Pi 3.
-     They use all four cores of the device. Both TensorFlow-Lite and tract
-     here have been made to run on a single-core.
-
 # License
-
-Note: files in the `tensorflow/protos` directory are copied from the
-[TensorFlow](https://github.com/tensorflow/tensorflow) project and are not
-covered by the following licence statement.
 
 Note: files in the `onnx/protos` directory are copied from the
 [ONNX](https://github.com/onnx/onnx) project and are not
@@ -188,8 +118,3 @@ All original work licensed under either of
  * MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
 at your option.
 
-## Contribution
-
-Unless you explicitly state otherwise, any Contribution intentionally submitted
-for inclusion in the work by you, as defined in the Apache-2.0 license, shall
-be dual licensed as above, without any additional terms or conditions.

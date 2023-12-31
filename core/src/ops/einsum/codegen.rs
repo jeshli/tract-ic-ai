@@ -5,7 +5,7 @@ use crate::ops::matmul::lir_unary::{
     AddMatMulGeometry, LirMatMulUnary, MapOutputAxisToInput, ProtoFusedSpec,
 };
 use crate::ops::matmul::mir_quant::{
-    combine_scales, compensate_zero_points, requant, wire_ensure_q8_flavour,
+    combine_scales, compensate_zero_points, requant, wire_offset_u8_as_i8,
 };
 use crate::ops::matmul::pack::MatMatMulPack;
 use crate::ops::nn::{Reduce, Reducer};
@@ -223,29 +223,25 @@ fn dequant(
 ) -> TractResult<Option<TypedModelPatch>> {
     let name = &node.name;
     let mut patch = TypedModelPatch::new("Dequantizing einsum");
-
-    let mut taps = patch.taps(model, &node.inputs)?;
-    for ab in [0, 1] {
-        let scale_input = 4 + ab * 2;
-        if !patch.outlet_fact(taps[scale_input])?.shape.volume().is_one() {
-            let q_axis_in_output = op.axes.axis((InOut::In(scale_input), 0))?.outputs[0][0];
-            let output_rank = node.outputs[0].fact.rank();
-            for i in 1..(output_rank - q_axis_in_output) {
-                taps[scale_input] = patch.wire_node(
-                    format!("{name}.scale_input{ab}_axis_fix_{i}"),
-                    AxisOp::Add(i),
-                    &[taps[scale_input]],
-                )?[0];
-            }
-        }
-    }
-
-    let [mut a, mut b, bias, mut a0, a_scale, mut b0, b_scale, c0, c_scale] = *taps else {
+    let taps = patch.taps(model, &node.inputs)?;
+    let [a, b, bias, mut a0, mut a_scale, mut b0, b_scale, c0, c_scale] = *taps else {
         bail!("Expect exactly 9 inputs")
     };
 
-    wire_ensure_q8_flavour(&mut patch, &node.name, &mut a, "a", &mut a0, i8::datum_type())?;
-    wire_ensure_q8_flavour(&mut patch, &node.name, &mut b, "b", &mut b0, i8::datum_type())?;
+    if !patch.outlet_fact(a_scale)?.shape.volume().is_one() {
+        let q_axis_in_output = op.axes.axis((InOut::In(4), 0))?.outputs[0][0];
+        let output_rank = node.outputs[0].fact.rank();
+        for i in 1..(output_rank - q_axis_in_output) {
+            a_scale = patch.wire_node(
+                format!("{name}.a_scale_axis_fix_{i}"),
+                AxisOp::Add(i),
+                &[a_scale],
+            )?[0];
+        }
+    }
+
+    let a = wire_offset_u8_as_i8(&mut patch, &node.name, a, "a", &mut a0, "a0")?;
+    let b = wire_offset_u8_as_i8(&mut patch, &node.name, b, "b", &mut b0, "b0")?;
 
     let mut output = patch.wire_node(
         &node.name,

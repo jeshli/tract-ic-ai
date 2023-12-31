@@ -1,15 +1,14 @@
-#[allow(clippy::module_inception)]
-mod conv;
 mod depth_wise;
 mod im2col;
 mod lazy_im2col;
 mod q_sum_b;
+mod unary;
 
 use crate::internal::*;
 
 pub use self::im2col::Im2Col;
 pub(crate) use self::q_sum_b::QSumB;
-pub use self::conv::Conv;
+pub use self::unary::ConvUnary;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default)]
 pub enum KernelFormat {
@@ -55,112 +54,50 @@ impl KernelFormat {
         &full_shape[self.o_axis(full_shape)]
     }
 
-    pub fn input_channels<'s, D: DimLike>(
-        &self,
-        full_kernel_shape: &'s [D],
-        group: usize,
-    ) -> Cow<'s, D> {
+    pub fn input_channels<D: DimLike>(&self, full_shape: &[D], group: usize) -> D {
         match self {
-            KernelFormat::OIHW => Cow::Owned(self.i(full_kernel_shape).clone() * group),
-            KernelFormat::HWIO | KernelFormat::OHWI => Cow::Borrowed(self.i(full_kernel_shape)),
+            KernelFormat::OIHW => self.i(full_shape).clone() * group,
+            KernelFormat::HWIO | KernelFormat::OHWI => self.i(full_shape).clone(),
         }
     }
 
-    pub fn output_channels<'s, D: DimLike>(
-        &self,
-        full_kernel_shape: &'s [D],
-        group: usize,
-    ) -> Cow<'s, D> {
+    pub fn output_channels<D: DimLike>(&self, full_shape: &[D], group: usize) -> D {
         match self {
-            KernelFormat::OIHW => Cow::Borrowed(self.o(full_kernel_shape)),
-            KernelFormat::HWIO | KernelFormat::OHWI => {
-                Cow::Owned(self.o(full_kernel_shape).clone() * group)
-            }
+            KernelFormat::OIHW => self.o(full_shape).clone(),
+            KernelFormat::HWIO | KernelFormat::OHWI => self.o(full_shape).clone() * group,
         }
     }
 
-    pub fn kernel_as_group_o_i_h_w_ops(
+    pub fn kernel_as_group_o_ihw(
         &self,
-        full_shape: &[impl DimLike],
+        kernel: &Tensor,
         group: usize,
-    ) -> TVec<AxisOp> {
-        let geo_rank = full_shape.len() - 2;
+        input_channels: usize,
+        output_channels: usize,
+    ) -> TractResult<Arc<Tensor>> {
+        let final_shape = [group, output_channels / group, kernel.len() / output_channels];
+        trace!("kernel shape (group, output, rest) = {:?}", final_shape);
+        let hw_rank = kernel.rank() - 2;
         match self {
-            // g is on i
             KernelFormat::HWIO => {
-                tvec!(
-                    AxisOp::Reshape(
-                        geo_rank,
-                        tvec!(self.i(full_shape).to_dim()),
-                        tvec!(group.to_dim(), self.i(full_shape).to_dim() / group),
-                    ), // h w g i o
-                    AxisOp::Move(geo_rank, 0),     // g h w i o
-                    AxisOp::Move(geo_rank + 2, 1), // g o h w i
-                    AxisOp::Move(geo_rank + 2, 2)
-                ) // g o i h w
+                // HWGIO
+                let tensor = kernel.clone().split_axis(hw_rank, input_channels / group)?;
+                // GOIHW
+                let mut permutation: Vec<usize> = vec![hw_rank + 1, hw_rank + 2, hw_rank];
+                permutation.extend(0..hw_rank);
+                let tensor =
+                    tensor.permute_axes(&permutation)?.into_shape(&final_shape)?.into_arc_tensor();
+                Ok(tensor)
             }
-            // g is on o
-            KernelFormat::OIHW => {
-                tvec!(AxisOp::Reshape(
-                    0,
-                    tvec!(self.o(full_shape).to_dim()),
-                    tvec!(group.to_dim(), self.o(full_shape).to_dim() / group),
-                ))
-            }
-            // g is on i
+            KernelFormat::OIHW => Ok(kernel.clone().into_shape(&final_shape)?.into_arc_tensor()),
             KernelFormat::OHWI => {
-                tvec!(
-                    AxisOp::Reshape(
-                        geo_rank + 1,
-                        tvec!(self.i(full_shape).to_dim()),
-                        tvec!(group.to_dim(), self.i(full_shape).to_dim() / group),
-                    ), // o h w g i
-                    AxisOp::Move(geo_rank + 1, 0), // g o h w i
-                    AxisOp::Move(geo_rank + 2, 2)
-                )
+                // move I to OIHW, then same as OIHW
+                Ok(kernel
+                    .clone()
+                    .move_axis(kernel.rank() - 1, 1)?
+                    .into_shape(&final_shape)?
+                    .into_arc_tensor())
             }
         }
-    }
-
-    pub fn kernel_as_group_o_i_hw_ops(
-        &self,
-        full_shape: &[impl DimLike],
-        group: usize,
-    ) -> TVec<AxisOp> {
-        let mut ops = self.kernel_as_group_o_i_h_w_ops(full_shape, group);
-        if self.hw(full_shape).len() > 1 {
-            ops.push(AxisOp::Reshape(
-                3,
-                self.hw(full_shape).iter().map(|t| t.to_dim()).collect(),
-                tvec!(self.hw(full_shape).iter().map(|t| t.to_dim()).product()),
-            ));
-        }
-        ops
-    }
-
-    pub fn kernel_as_group_o_ihw_ops(
-        &self,
-        full_shape: &[impl DimLike],
-        group: usize,
-    ) -> TVec<AxisOp> {
-        let i = (self.input_channels(full_shape, group).into_owned() / group).to_dim();
-        let hw = self.hw(full_shape).iter().map(|t| t.to_dim()).product::<TDim>();
-        let mut ops = self.kernel_as_group_o_i_hw_ops(full_shape, group);
-        ops.push(AxisOp::Reshape(2, tvec!(i.clone(), hw.clone()), tvec!(i * hw)));
-        ops
-    }
-
-    pub fn kernel_as_group_o_i_hw(&self, kernel: &Tensor, group: usize) -> TractResult<Tensor> {
-        let mut kernel = kernel.clone();
-        let ops = self.kernel_as_group_o_i_hw_ops(kernel.shape(), group);
-        for op in &ops {
-            op.change_tensor(&mut kernel, false)?;
-        }
-        Ok(kernel)
-    }
-
-    pub fn kernel_as_group_o_ihw(&self, kernel: &Tensor, group: usize) -> TractResult<Tensor> {
-        let group_o_i_hw = self.kernel_as_group_o_i_hw(kernel, group)?;
-        Ok(group_o_i_hw.collapse_axis_with_next(2))
     }
 }

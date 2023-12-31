@@ -1,3 +1,0 @@
-# NNEF
-
-::: tract.nnef

@@ -10,7 +10,6 @@ mod batch_norm;
 mod conv_transpose;
 mod dropout;
 mod instance_norm;
-mod layer_norm;
 mod lrn;
 mod reduce;
 
@@ -46,7 +45,6 @@ pub fn register_all_ops(reg: &mut OnnxOpRegister) {
     reg.insert("Hardmax", layer_hard_max);
     reg.insert("HardSigmoid", hard_sigmoid);
     reg.insert("InstanceNormalization", instance_norm::instance_normalization);
-    reg.insert("LayerNormalization", layer_norm::layer_norm);
     reg.insert("LeakyRelu", leaky_relu);
     reg.insert("LogSoftmax", layer_log_soft_max);
     reg.insert("LRN", lrn::lrn);
@@ -210,8 +208,8 @@ pub fn average_pool(
     let strides = strides(node)?;
     let count_include_pad = node.get_attr_opt("count_include_pad")?.unwrap_or(false);
     Ok((
-        expand(cnn::HirSumPool::new(
-            cnn::PoolSpec::new(nn::DataFormat::NCHW, kernel_shape, pad, None, strides, 0, 0),
+        Box::new(cnn::SumPool::new(
+            cnn::PoolSpec::new(nn::DataFormat::NCHW, kernel_shape, pad, None, strides, None),
             count_include_pad,
             true,
         )),
@@ -304,8 +302,8 @@ pub fn max_pool(
     let pad = pad(node, true)?;
     let strides = strides(node)?;
     Ok((
-        expand(cnn::HirMaxPool::new(
-            cnn::PoolSpec::new(nn::DataFormat::NCHW, kernel_shape, pad, None, strides, 0, 0),
+        Box::new(cnn::MaxPool::new(
+            cnn::PoolSpec::new(nn::DataFormat::NCHW, kernel_shape, pad, None, strides, None),
             if node.output.len() == 2 { Some(DatumType::I64) } else { None },
         )),
         vec![],

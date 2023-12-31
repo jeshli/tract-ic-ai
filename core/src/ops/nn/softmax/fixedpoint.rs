@@ -1,4 +1,4 @@
-pub use num_traits::{AsPrimitive, PrimInt};
+pub use num_traits::{AsPrimitive, PrimInt, Signed};
 use std::fmt::{Binary, Debug, LowerHex};
 
 use super::math::*;
