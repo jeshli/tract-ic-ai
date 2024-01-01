@@ -26,9 +26,9 @@ rust-version = "1.65"
 #tract-nnef = { version = "=0.20.22-pre", path = "../tract-main/nnef", default-features = false}
 #tract-hir = { version = "=0.20.22-pre", path = "../tract-main/hir", default-features = false}
 #tract-onnx-opl = { version = "=0.20.22-pre", path = "../tract-main/onnx-opl", default-features = false}
-tract-nnef = { version = "=0.20.22-pre", path = "../onnx-min-byte-dependencies/nnef", default-features = false}
-tract-hir = { version = "=0.20.22-pre", path = "../onnx-min-byte-dependencies/hir", default-features = false}
-tract-onnx-opl = { version = "=0.20.22-pre", path = "../onnx-min-byte-dependencies/onnx-opl", default-features = false}
+tract-nnef = { version = "=0.20.22-pre", path = "../nnef", default-features = false}
+tract-hir = { version = "=0.20.22-pre", path = "../hir", default-features = false}
+tract-onnx-opl = { version = "=0.20.22-pre", path = "../onnx-opl", default-features = false}
 bytes = { version = "1.0.1", default-features = false}
 derive-new = { version = "0.5.9", default-features = false}
 log = { version = "0.4.14", default-features = false}

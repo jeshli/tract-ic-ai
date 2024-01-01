@@ -27,7 +27,7 @@ tar = { version = "0.4.37", default-features = false}
 #walkdir = { version = "2.3.2", default-features = false}
 #flate2 = { workspace = true, optional = true }
 flate2 =  {version = "1.0.20", optional = true }
-tract-core = { version = "=0.20.22-pre", path = "../../tract-main/core" , default-features = false}
+tract-core = { version = "=0.20.22-pre", path = "../core" , default-features = false}
 #tract-core = { version = "0.20.22", default-features = false}
 
 #[dev-dependencies]
