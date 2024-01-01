@@ -24,7 +24,7 @@ log = { version = "0.4.14", default-features = false}
 #rand_distr = { version ="0.4"} #, default-features = false}
 #rustfft.workspace = true
 #rustfft = { version = "6.1", features = [ "neon" ] , default-features = false}
-tract-nnef = { version = "=0.20.22-pre", path = "../nnef", default-features = false, features=['flate2'] }
+tract-nnef = { path = "../nnef", default-features = false, features=['flate2'] }
 
 #[dev-dependencies]
 #env_logger.workspace = true
