@@ -14,17 +14,11 @@ edition = "2021"
 #maintenance = { status = "actively-developed" }
 
 [dependencies]
-#derive-new.workspace = true
-#log.workspace = true
-derive-new = { version = "0.5.9", default-features = false}
-log = { version = "0.4.14", default-features = false}
+derive-new.workspace = true
+log.workspace = true
 tract-core = { path = "../core" , default-features = false}
-#tract-core = { version = "0.20.22", default-features = false}
-
-#[dev-dependencies]
-#env_logger.workspace = true
 
 [profile.release]
 # Tell `rustc` to optimize for small code size.
-opt-level = "s"
+#opt-level = "s"
 #opt-level = "z"  # more aggresive compression

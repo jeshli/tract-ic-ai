@@ -78,115 +78,6 @@ impl Nnef {
         ModelBuilder::new(self, proto_model, symbols).into_typed_model()
     }
 
-    /*
-    pub fn write(&self, model: &TypedModel, w: impl std::io::Write) -> TractResult<()> {
-        self.write_to_tar(model, w)?;
-        Ok(())
-    }
-
-
-    pub fn write_to_tar<W: std::io::Write>(&self, model: &TypedModel, w: W) -> TractResult<W> {
-        let mut ar = tar::Builder::new(w);
-        self._write_to_tar(model, &mut ar, false)?;
-        ar.into_inner().context("Finalizing tar")
-    }
-
-    pub fn write_to_tar_with_config<W: std::io::Write>(&self, model: &TypedModel, w: W, compress_nested_models: bool) -> TractResult<W> {
-        let mut ar = tar::Builder::new(w);
-        self._write_to_tar(model, &mut ar, compress_nested_models)?;
-        ar.into_inner().context("Finalizing tar")
-    }
-
-
-    fn _write_to_tar<W: std::io::Write>(
-        &self,
-        model: &TypedModel,
-        ar: &mut Builder<W>,
-        compress_nested_models: bool,
-    ) -> TractResult<()> {
-        let proto_model =
-            crate::ser::to_proto_model(self, model).context("Translating model to proto_model")?;
-
-        let mut graph_data = vec![];
-        crate::ast::dump::Dumper::new(self, &mut graph_data)
-            .document(&proto_model.doc)
-            .context("Serializing graph.nnef")?;
-        let now =
-            std::time::SystemTime::now().duration_since(std::time::SystemTime::UNIX_EPOCH).unwrap();
-
-        let mut header = tar::Header::new_gnu();
-        header.set_path("graph.nnef").context("Setting graph.nnef path")?;
-        header.set_size(graph_data.len() as u64);
-        header.set_mode(0o644);
-        header.set_mtime(now.as_secs());
-        header.set_cksum();
-        ar.append(&header, &mut &*graph_data).context("Appending graph.nnef")?;
-
-        if let Some(quantization) = proto_model.quantization {
-            let mut quant_data = vec![];
-
-            for (name, format) in quantization.into_iter() {
-                write_quant_format(&mut quant_data, &name, format, self.allow_extended_identifier_syntax)
-                    .context("Serializing graph.quant")?;
-            }
-
-            header.set_path("graph.quant").context("Setting graph.quant path")?;
-            header.set_size(quant_data.len() as u64);
-            header.set_mode(0o644);
-            header.set_mtime(now.as_secs());
-            header.set_cksum();
-            ar.append(&header, &mut &*quant_data).context("Appending graph.quant")?;
-        }
-
-        for (label, t) in &proto_model.tensors {
-            let mut label = label.0.to_string() + ".dat";
-            if label.starts_with('/') {
-                label.insert(0, '.');
-            }
-            let filename = std::path::Path::new(&label);
-            let mut data = vec![];
-            crate::tensors::write_tensor(&mut data, t)
-                .with_context(|| format!("Serializing tensor {filename:?}: {t:?}"))?;
-
-            let mut header = tar::Header::new_gnu();
-            header.set_size(data.len() as u64);
-            header.set_mode(0o644);
-            header.set_mtime(now.as_secs());
-            header.set_cksum();
-
-            ar.append_data(&mut header, filename, &mut &*data)
-                .with_context(|| format!("Appending tensor {filename:?}"))?;
-        }
-
-        for (label, resource) in proto_model.resources.iter() {
-            if let Some(typed_model_resource) = resource.downcast_ref::<TypedModelResource>() {
-                let mut submodel_data = vec![];
-                let mut filename = std::path::PathBuf::from_str(label)?;
-                let typed_model = &typed_model_resource.0;
-
-                if compress_nested_models {
-                    filename.set_extension("nnef.tgz");
-                    let encoder = flate2::write::GzEncoder::new(&mut submodel_data, flate2::Compression::default());
-                    self.write(typed_model, encoder)?;
-                } else {
-                    filename.set_extension("nnef.tar");
-                    self.write(typed_model, &mut submodel_data)?;
-                }
-
-                let mut header = tar::Header::new_gnu();
-                header.set_size(submodel_data.len() as u64);
-                header.set_mode(0o644);
-                header.set_mtime(now.as_secs());
-                header.set_cksum();
-
-                ar.append_data(&mut header, filename, &mut &*submodel_data)
-                    .with_context(|| format!("Appending submodel {label:?}"))?;
-            }
-
-        }
-        Ok(())
-    }
-     */
     pub fn write_to_dir(
         &self,
         model: &TypedModel,
@@ -225,37 +116,6 @@ impl tract_core::prelude::Framework<ProtoModel, TypedModel> for Nnef {
         self.model_for_proto_model(&proto)
     }
 
-    /*
-    fn proto_model_for_path(&self, path: impl AsRef<Path>) -> TractResult<ProtoModel> {
-        let path = path.as_ref();
-        if path.is_file() {
-            let mut f = std::fs::File::open(path)?;
-            return self.proto_model_for_read(&mut f);
-        }
-
-        let mut resources: HashMap<String, Arc<dyn Resource>> = Default::default();
-
-        // `walkdir::new` will first yield the given path at depth 0, but we don't want to load this
-        // entry here: only its descendants at depth >= 1.
-        for entry in walkdir::WalkDir::new(path).min_depth(1) {
-            let entry =
-                entry.map_err(|e| format_err!("Can not walk directory {:?}: {:?}", path, e))?;
-            // We don't want to load sub-directories themselves either.
-            if entry.path().is_dir() {
-                continue;
-            }
-            let subpath = entry
-                .path()
-                .components()
-                .skip(path.components().count())
-                .collect::<std::path::PathBuf>();
-            let mut stream = std::fs::File::open(entry.path())?;
-            read_stream(&subpath, &mut stream, &mut resources, self)?;
-        }
-        proto_model_from_resources(resources)
-    }
-    */
-
     fn proto_model_for_read(&self, reader: &mut dyn std::io::Read) -> TractResult<ProtoModel> {
         let mut resources: HashMap<String, Arc<dyn Resource>> = Default::default();
 
@@ -264,11 +124,13 @@ impl tract_core::prelude::Framework<ProtoModel, TypedModel> for Nnef {
         let header = std::io::Cursor::new(buffer.clone());
         let stream = header.chain(reader);
         let mut tar = if buffer == [0x1f, 0x8b] {
+            /*
             #[cfg(feature = "flate2")]
             {
                 let f = flate2::read::GzDecoder::new(stream);
                 tar::Archive::new(Box::new(f) as Box<dyn Read>)
             }
+            */
             #[cfg(not(feature = "flate2"))]
             bail!("Cannot read gzip file without flate2 enabled.");
         } else {
@@ -384,11 +246,6 @@ fn read_stream<R: std::io::Read>(
     resources: &mut HashMap<String, Arc<dyn Resource>>,
     framework: &Nnef,
 ) -> TractResult<()> {
-    // ignore path with any component starting with "." (because OSX's tar is weird)
-    //#[cfg(target_family = "unix")]
-    //if path.components().any(|name| name.as_os_str().as_bytes().first() == Some(&b'.')) {
-    //    return Ok(());
-    //}
     let mut last_loader_name;
     for loader in framework.resource_loaders.iter() {
         last_loader_name = Some(loader.name());

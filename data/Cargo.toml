@@ -15,19 +15,19 @@ rust-version = "1.65"
 maintenance = { status = "actively-developed" }
 
 [dependencies]
-anyhow = "1.0.43"
+anyhow =  { version = "1.0.43"}#, default-features = false}
 half = { version="=2.2.1", features = [ "std", "num-traits" ] }
-itertools = "0.10.1"
-lazy_static = "1.4.0"
-maplit = "1.0.2"
-ndarray = "0.15.3"
-nom = "7.0.0"
+itertools =  { version = "0.10.1"}#, default-features = false}
+lazy_static =  { version = "1.4.0", default-features = false}
+maplit =  { version = "1.0.2", default-features = false}
+ndarray =  { version = "0.15.3", default-features = false}
+nom =  { version = "7.0.0"}#, default-features = false}
 num-complex = { version = "0.4.0", optional = true }
-num-integer = "0.1.44"
-num-traits = "0.2.14"
-smallvec = "1.6.1"
-scan_fmt = "0.2.6"
-string-interner = "0.14"
+num-integer =  { version = "0.1.44", default-features = false}
+num-traits =  { version = "0.2.14", default-features = false}
+smallvec =  { version = "1.6.1", default-features = false}
+scan_fmt =  { version = "0.2.6", default-features = false}
+string-interner =  { version = "0.14" }#, default-features = false}
 
 
 
@@ -40,5 +40,5 @@ complex = [ "num-complex" ]
 
 [profile.release]
 # Tell `rustc` to optimize for small code size.
-opt-level = "s"
+#opt-level = "s"
 #opt-level = "z"

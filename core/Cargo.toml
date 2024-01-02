@@ -21,7 +21,8 @@ derive-new = "0.5.9"
 downcast-rs = "1.2.0"
 dyn-clone = "1.0.4"
 #lazy_static = "1.4.0"
-log = "0.4.14"
+#log = "0.4.14"
+log.workspace = true
 #maplit = "1.0.2"
 ndarray = "0.15.3"
 num-complex = "0.4.0"
@@ -47,5 +48,5 @@ paranoid_assertions = []
 
 [profile.release]
 # Tell `rustc` to optimize for small code size.
-opt-level = "s"
+#opt-level = "s"
 #opt-level = "z"
