@@ -46,7 +46,7 @@
 //!
 
 pub extern crate anyhow;
-extern crate bit_set;
+//extern crate bit_set;
 #[macro_use]
 extern crate derive_new;
 #[macro_use]
@@ -57,11 +57,12 @@ extern crate log;
 #[allow(unused_imports)]
 #[macro_use]
 pub extern crate ndarray;
-#[cfg(test)]
-extern crate env_logger;
+
+//#[cfg(test)]
+//extern crate env_logger;
 pub extern crate num_traits;
-#[cfg(test)]
-extern crate proptest;
+//#[cfg(test)]
+//extern crate proptest;
 
 pub extern crate tract_data;
 pub extern crate tract_linalg;

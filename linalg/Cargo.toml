@@ -14,32 +14,34 @@ edition = "2021"
 maintenance = { status = "actively-developed" }
 
 [dependencies]
-derive-new.workspace = true
-downcast-rs.workspace = true
-dyn-clone.workspace = true
-lazy_static.workspace = true
-log.workspace = true
-num-traits.workspace = true
-paste.workspace = true
-scan_fmt.workspace = true
-tract-data = { version = "=0.20.22-pre", path = "../data" }
+derive-new = "0.5.9"
+downcast-rs = "1.2.0"
+dyn-clone = "1.0.4"
+lazy_static = "1.4.0"
+#log = "0.4.14"
+num-traits = "0.2.14"
+paste = "1.0.5"
+#scan_fmt = "0.2.6"
+tract-data = { path = "../data" }
 
 [build-dependencies]
-cc.workspace = true
-half.workspace = true
-liquid.workspace = true
-liquid-core.workspace = true
-smallvec.workspace = true
-unicode-normalization.workspace = true
-time.workspace = true
-walkdir.workspace = true
+#cc = "1.0.69"
+#half = { version="=2.2.1", features = [ "std", "num-traits" ] }
+#liquid = "0.26"
+#liquid-core = "0.26"
+#smallvec = "1.6.1"
+#unicode-normalization = "0.1.19"
+#time = "=0.3.23"
+#walkdir = "2.3.2"
+
+
 
 [dev-dependencies]
-criterion.workspace = true
-env_logger.workspace = true
-nu-ansi-term.workspace = true
-proptest.workspace = true
-core_affinity.workspace = true
+#criterion.workspace = true
+#env_logger.workspace = true
+#nu-ansi-term.workspace = true
+#proptest.workspace = true
+#core_affinity.workspace = true
 
 [features]
 # This feature is meant to accomodate very restrictive / legacy toolchains that do
@@ -50,60 +52,7 @@ no_fp16 = []
 default = []
 complex = [ "tract-data/complex" ]
 
-[[bench]]
-bench = false
-name = "arm64"
-harness = false
-
-[[bench]]
-name = "mat_vec"
-harness = false
-
-[[bench]]
-name = "mm_for_wavenet_hw"
-harness = false
-
-[[bench]]
-name = "conv_for_wavenet_hw"
-harness = false
-
-[[bench]]
-name = "mm_for_inception"
-harness = false
-
-[[bench]]
-name = "mm_for_asr_am"
-harness = false
-
-[[bench]]
-name = "sigmoid"
-harness = false
-
-[[bench]]
-bench = false
-name = "arm64simd"
-harness = false
-
-[[bench]]
-bench = false
-name = "arm32neon"
-harness = false
-
-[[bench]]
-name = "virtual_im2col"
-harness = false
-
-[[bench]]
-bench = false
-name = "x86_64"
-harness = false
-
-[[bench]]
-bench = false
-name = "intel"
-harness = false
-
-[[bench]]
-bench = false
-name = "leaky_relu"
-harness = false
+[profile.release]
+# Tell `rustc` to optimize for small code size.
+opt-level = "s"
+#opt-level = "z"

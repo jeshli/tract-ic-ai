@@ -15,32 +15,37 @@ rust-version = "1.65"
 maintenance = { status = "actively-developed" }
 
 [dependencies]
-anyhow.workspace = true
-bit-set.workspace = true
-derive-new.workspace = true
-downcast-rs.workspace = true
-dyn-clone.workspace = true
-lazy_static.workspace = true
-log.workspace = true
-maplit.workspace = true
-ndarray.workspace = true
-num-integer.workspace = true
-num-traits.workspace = true
-num-complex.workspace = true
-paste.workspace = true
-rustfft.workspace = true
-smallvec.workspace = true
+anyhow = "1.0.43"
+bit-set= "0.5.2"
+derive-new = "0.5.9"
+downcast-rs = "1.2.0"
+dyn-clone = "1.0.4"
+#lazy_static = "1.4.0"
+log = "0.4.14"
+#maplit = "1.0.2"
+ndarray = "0.15.3"
+num-complex = "0.4.0"
+#num-integer = "0.1.44"
+num-traits = "0.2.14"
+paste = "1.0.5"
+rustfft = { version = "6.1", features = [ "neon" ] }
+#smallvec = "1.6.1"
 tract-linalg = { version = "=0.20.22-pre", path = "../linalg" }
 tract-data = { version = "=0.20.22-pre", path = "../data" }
 
 [features]
 default = [ ]
-complex = [ "tract-data/complex", "tract-linalg/complex" ]
+#complex = [ "tract-data/complex", "tract-linalg/complex" ]
 paranoid_assertions = []
 
 [dev-dependencies]
-criterion.workspace = true
-env_logger.workspace = true
-lazy_static.workspace = true
-proptest.workspace = true
-approx.workspace = true
+#criterion.workspace = true
+#env_logger.workspace = true
+#lazy_static.workspace = true
+#proptest.workspace = true
+#approx.workspace = true
+
+[profile.release]
+# Tell `rustc` to optimize for small code size.
+opt-level = "s"
+#opt-level = "z"

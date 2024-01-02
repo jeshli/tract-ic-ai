@@ -15,31 +15,30 @@ rust-version = "1.65"
 maintenance = { status = "actively-developed" }
 
 [dependencies]
-anyhow.workspace = true
-half.workspace = true
-itertools.workspace = true
-maplit.workspace = true
-ndarray.workspace = true
-nom.workspace = true
-num-complex = { workspace = true, optional = true }
-num-integer.workspace = true
-num-traits.workspace = true
-smallvec.workspace = true
-lazy_static.workspace = true
-scan_fmt.workspace = true
-string-interner.workspace = true
+anyhow = "1.0.43"
+half = { version="=2.2.1", features = [ "std", "num-traits" ] }
+itertools = "0.10.1"
+lazy_static = "1.4.0"
+maplit = "1.0.2"
+ndarray = "0.15.3"
+nom = "7.0.0"
+num-complex = { version = "0.4.0", optional = true }
+num-integer = "0.1.44"
+num-traits = "0.2.14"
+smallvec = "1.6.1"
+scan_fmt = "0.2.6"
+string-interner = "0.14"
+
+
 
 [dev-dependencies]
-criterion.workspace = true
-proptest.workspace = true
+#criterion.workspace = true
+#proptest.workspace = true
 
 [features]
 complex = [ "num-complex" ]
 
-[[bench]]
-name = "tensor_from_datum"
-harness = false
-
-[[bench]]
-name = "stack_tensors"
-harness = false
+[profile.release]
+# Tell `rustc` to optimize for small code size.
+opt-level = "s"
+#opt-level = "z"

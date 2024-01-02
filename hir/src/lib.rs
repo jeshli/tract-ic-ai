@@ -26,7 +26,7 @@ pub mod prelude {
 }
 
 pub mod internal {
-    pub use super::prelude::*;
+    //pub use super::prelude::*;
     pub use crate::infer::*;
     pub use crate::ops::binary::BinIntoHir;
     pub use crate::ops::element_wise::ElementWiseIntoHir;

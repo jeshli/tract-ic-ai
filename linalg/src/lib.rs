@@ -3,14 +3,14 @@
 #[macro_use]
 extern crate derive_new;
 extern crate lazy_static;
-extern crate log;
+//extern crate log;
 extern crate num_traits;
 #[macro_use]
 extern crate paste;
 #[cfg(test)]
 extern crate proptest;
 
-include!(concat!(env!("OUT_DIR"), "/extern_kernel_macro.rs"));
+//include!(concat!(env!("OUT_DIR"), "/extern_kernel_macro.rs"));
 
 #[macro_use]
 pub mod frame;
@@ -18,14 +18,14 @@ pub mod generic;
 use frame::element_wise::ElementWiseKer;
 use frame::MatMatMul;
 pub use generic::{ScaleShiftAndRound, Scaler};
-#[cfg(target_arch = "x86_64")]
-pub mod x86_64_fma;
+//#[cfg(target_arch = "x86_64")]
+//pub mod x86_64_fma;
 
-#[cfg(target_arch = "aarch64")]
-pub mod arm64;
+//#[cfg(target_arch = "aarch64")]
+//pub mod arm64;
 
-#[cfg(any(target_arch = "arm", target_arch = "armv7"))]
-pub mod arm32;
+//#[cfg(any(target_arch = "arm", target_arch = "armv7"))]
+//pub mod arm32;
 
 pub use self::frame::{element_wise, lut, mmm};
 
@@ -125,17 +125,22 @@ pub fn generic() -> Ops {
     }
 }
 
+
 #[allow(unreachable_code, unused_mut)]
 pub fn best() -> Ops {
     let mut ops = generic();
+    /*
     #[cfg(target_arch = "x86_64")]
     x86_64_fma::plug(&mut ops);
     #[cfg(any(target_arch = "arm", target_arch = "armv7"))]
     arm32::plug(&mut ops);
     #[cfg(target_arch = "aarch64")]
     arm64::plug(&mut ops);
+    */
     ops
 }
+
+
 
 lazy_static::lazy_static! {
     static ref OPS: Ops = {
@@ -217,8 +222,10 @@ impl LADatum for i32 {
     }
 }
 
+/*
 #[cfg(test)]
 #[allow(dead_code)]
 fn setup_test_logger() {
     let _ = env_logger::Builder::from_env("TRACT_LOG").try_init();
 }
+*/

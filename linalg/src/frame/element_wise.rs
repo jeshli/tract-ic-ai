@@ -1,3 +1,4 @@
+
 use std::fmt::Debug;
 use std::marker::PhantomData;
 
@@ -6,7 +7,7 @@ use tract_data::TractResult;
 use crate::LADatum;
 
 use super::element_wise_helper::run_over_slice_with_alignment;
-
+/*
 macro_rules! ew_impl_wrap {
     ($ti: ident, $func: ident, $nr: expr, $alignment_items: expr, $params: ty, $run: item) => {
         paste! {
@@ -69,6 +70,7 @@ macro_rules! ew_impl {
         }
     };
 }
+*/
 
 pub trait ElementWise<T, Params = ()>: Send + Sync + Debug + dyn_clone::DynClone
 where

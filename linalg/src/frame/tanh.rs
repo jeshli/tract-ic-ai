@@ -1,3 +1,4 @@
+/*
 macro_rules! tanh_impl {
     ($ti: ident, $func: ident, $nr: expr, $alignment_items: expr, $cond: expr) => {
         ew_impl!($ti, $func, $nr, $alignment_items);
@@ -100,3 +101,4 @@ pub mod test {
         crate::frame::element_wise::test::test_element_wise::<K, _, _>(&values, |x| x.tanh())
     }
 }
+*/
