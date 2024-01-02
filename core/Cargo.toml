@@ -15,24 +15,20 @@ rust-version = "1.65"
 maintenance = { status = "actively-developed" }
 
 [dependencies]
-anyhow = "1.0.43"
-bit-set= "0.5.2"
-derive-new = "0.5.9"
-downcast-rs = "1.2.0"
-dyn-clone = "1.0.4"
-#lazy_static = "1.4.0"
-#log = "0.4.14"
+anyhow.workspace = true
+bit-set.workspace = true
+derive-new.workspace = true
+downcast-rs.workspace = true
+dyn-clone.workspace = true
 log.workspace = true
 #maplit = "1.0.2"
-ndarray = "0.15.3"
-num-complex = "0.4.0"
-#num-integer = "0.1.44"
-num-traits = "0.2.14"
-paste = "1.0.5"
-rustfft = { version = "6.1", features = [ "neon" ] }
-#smallvec = "1.6.1"
-tract-linalg = { version = "=0.20.22-pre", path = "../linalg" }
-tract-data = { version = "=0.20.22-pre", path = "../data" }
+ndarray = { version = "0.15.3"}#, default-features=false}
+num-complex.workspace = true
+num-traits.workspace = true
+paste.workspace = true
+rustfft = { version = "6.1", features = [ "neon" ], default-features=false }
+tract-linalg = { path = "../linalg" }
+tract-data = { path = "../data" }
 
 [features]
 default = [ ]

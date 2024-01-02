@@ -39,7 +39,7 @@ tract-data = { path = "../data" }
 # preferred.
 no_fp16 = []
 default = []
-complex = [ "tract-data/complex" ]
+#complex = [ "tract-data/complex" ]
 
 [profile.release]
 # Tell `rustc` to optimize for small code size.
