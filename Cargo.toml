@@ -23,7 +23,7 @@ log = { version = "0.4.14", default-features = false}
 maplit =  { version = "1.0.2", default-features = false}
 ndarray =  { version = "0.15.3", default-features = false}
 nom = { version = "7.0.0", default-features = false}
-num-complex = { version = "0.4.0", default-features=false}
+#num-complex = { version = "0.4.0", default-features=false}
 num-integer =  { version = "0.1.44", default-features = false}
 num-traits = { version = "0.2.14", default-features = false}
 paste = { version = "1.0.5", default-features = false}
