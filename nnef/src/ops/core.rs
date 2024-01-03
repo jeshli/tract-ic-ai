@@ -3,12 +3,12 @@ use tract_core::ops;
 
 mod broadcast;
 mod cast;
-#[cfg(feature = "complex")]
-mod complex;
+//#[cfg(feature = "complex")]
+//mod complex;
 mod downsample;
 mod dyn_slice;
 mod einsum;
-mod fft;
+//mod fft;
 mod force_eval;
 mod gather;
 mod load;
@@ -42,12 +42,12 @@ pub fn register(registry: &mut Registry) {
     registry.register_binary("tract_shr", &ops::math::ShiftRight);
     broadcast::register(registry);
     cast::register(registry);
-    #[cfg(feature = "complex")]
-    complex::register(registry);
+    //#[cfg(feature = "complex")]
+    //complex::register(registry);
     downsample::register(registry);
     dyn_slice::register(registry);
     einsum::register(registry);
-    fft::register(registry);
+    //fft::register(registry);
     force_eval::register(registry);
     gather::register(registry);
     load::register(registry);
